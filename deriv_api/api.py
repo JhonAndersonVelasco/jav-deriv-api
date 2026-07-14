@@ -41,11 +41,9 @@ from .models import (
     BuyResponse,
     CancelRequest,
     CancelResponse,
-    ContractCategory,
     ContractUpdateHistoryRequest,
     ContractUpdateRequest,
     ContractsForRequest,
-    ContractsListRequest,
     ForgetAllRequest,
     ForgetRequest,
     LimitOrder,
@@ -244,7 +242,7 @@ class DerivAPI:
             params = BuyParameters(
                 contract_type="CALL",
                 currency="USD",
-                underlying_symbol="R_50",
+                symbol="R_50",
                 amount=10.0,
                 basis="stake",
                 duration=5,
@@ -318,27 +316,6 @@ class DerivAPI:
         req = ContractsForRequest(symbol=symbol)
         response = await self._client.send(req.to_dict())
         return response.get("contracts_for", {})
-
-    # ------------------------------------------------------------------
-    # contracts_list
-    # ------------------------------------------------------------------
-
-    async def get_contracts_list(self) -> list[ContractCategory]:
-        """
-        Get all contract categories available on the platform.
-
-        Returns
-        -------
-        list[ContractCategory]
-            Each item has ``contract_category``, ``contract_types``, and
-            ``display_name``.
-        """
-        req = ContractsListRequest()
-        response = await self._client.send(req.to_dict())
-        return [
-            ContractCategory.from_dict(c)
-            for c in response.get("contracts_list", [])
-        ]
 
     # ------------------------------------------------------------------
     # contract_update

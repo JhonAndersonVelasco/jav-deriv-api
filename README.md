@@ -11,7 +11,7 @@ the REST HTTP API (account management).  Built on top of `websockets` and
 ## Installation
 
 ```bash
-pip install websockets aiohttp
+pip install websockets aiohttp python-dotenv
 # or, once packaged:
 pip install deriv-api
 ```

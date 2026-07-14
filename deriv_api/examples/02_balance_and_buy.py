@@ -9,14 +9,8 @@ Run:
 
 import asyncio
 import os
-from pathlib import Path
-
-from dotenv import load_dotenv
 
 from deriv_api import DerivAPI, BuyParameters, DerivAuthError, DerivRequestError
-
-# Load .env from the deriv_api package directory (one level up from examples/)
-load_dotenv(Path(__file__).parent.parent / ".env")
 
 APP_ID = 1089
 TOKEN = os.environ.get("DERIV_TOKEN", "")
@@ -35,28 +29,30 @@ async def main() -> None:
         print(f"  Login ID : {balance.loginid}")
         print(f"  Balance  : {balance.balance:.2f} {balance.currency}\n")
 
-        # --- Contracts list ---
-        print("Available contract categories:")
-        categories = await api.get_contracts_list()
-        for cat in categories:
-            types = ", ".join(cat.contract_types[:4])
-            if len(cat.contract_types) > 4:
-                types += f" … (+{len(cat.contract_types) - 4} more)"
-            print(f"  {cat.display_name:<30} [{types}]")
-
         # --- Contracts for a symbol ---
         symbol = "R_50"
-        print(f"\nFetching contracts for {symbol}…")
+        print(f"Available contract types for {symbol}:")
         cf = await api.get_contracts_for(symbol)
         available = cf.get("available", [])
-        print(f"  {len(available)} contract types available for {symbol}.")
+        # Collect unique categories
+        seen: set[str] = set()
+        for c in available:
+            cat = c.get("contract_category_display", c.get("contract_category", ""))
+            if cat not in seen:
+                seen.add(cat)
+                types_in_cat = [
+                    x.get("contract_type", "")
+                    for x in available
+                    if x.get("contract_category") == c.get("contract_category")
+                ]
+                print(f"  {cat:<30} {', '.join(dict.fromkeys(types_in_cat))}")
 
         # --- Buy a small demo contract (Rise/Fall, 1 USD, 5 ticks) ---
         print("\nBuying a CALL contract on R_50 (5 ticks, 1 USD stake)…")
         params = BuyParameters(
             contract_type="CALL",
             currency="USD",
-            underlying_symbol="R_50",
+            symbol="R_50",
             amount=1.0,
             basis="stake",
             duration=5,

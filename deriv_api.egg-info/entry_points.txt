@@ -1,0 +1,2 @@
+[console_scripts]
+deriv-setup = deriv_api.setup_cli:main

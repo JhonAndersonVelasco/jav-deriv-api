@@ -22,7 +22,28 @@ Low-level WebSocket client (escape hatch):
     async with DerivClient(app_id=1234) as client:
         await client.authorize("YOUR_TOKEN")
         response = await client.send({"active_symbols": "brief"})
+
+Environment variables are loaded automatically from a .env file located in:
+  1. The project root (two levels up from this package, where pyproject.toml lives)
+  2. The package directory (deriv_api/.env) — fallback
+
+Run ``deriv-setup`` after installation to create the .env interactively.
 """
+
+from pathlib import Path
+
+from dotenv import load_dotenv as _load_dotenv
+
+# Resolve candidate .env paths: project root first, then package dir as fallback.
+_pkg_dir = Path(__file__).parent
+_candidates = [
+    _pkg_dir.parent / ".env",  # project root
+    _pkg_dir / ".env",         # deriv_api/.env
+]
+for _env_path in _candidates:
+    if _env_path.exists():
+        _load_dotenv(_env_path, override=False)  # override=False: env vars already set take priority
+        break
 
 from .api import DerivAPI
 from .client import DerivClient
@@ -46,11 +67,9 @@ from .models import (
     BuyResponse,
     CancelRequest,
     CancelResponse,
-    ContractCategory,
     ContractUpdateHistoryRequest,
     ContractUpdateRequest,
     ContractsForRequest,
-    ContractsListRequest,
     CreateAccountRequest,
     ForgetAllRequest,
     ForgetRequest,
@@ -80,7 +99,6 @@ __all__ = [
     "BuyRequest",
     "CancelRequest",
     "ContractsForRequest",
-    "ContractsListRequest",
     "ContractUpdateRequest",
     "ContractUpdateHistoryRequest",
     "CreateAccountRequest",
@@ -93,7 +111,6 @@ __all__ = [
     "BalanceResponse",
     "BuyResponse",
     "CancelResponse",
-    "ContractCategory",
     "LegacyAccount",
 ]
 

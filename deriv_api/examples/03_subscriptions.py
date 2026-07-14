@@ -27,10 +27,15 @@ async def watch_balance(api: DerivAPI, stop: asyncio.Event) -> None:
             print(f"[balance] {update.balance:.2f} {update.currency}  (sub_id={stream_id})")
             if stop.is_set():
                 break
+    except asyncio.CancelledError:
+        pass  # Expected when main cancels this task
     finally:
         if stream_id:
-            cancelled = await api.forget(stream_id)
-            print(f"[balance] Stream cancelled: {cancelled}")
+            try:
+                cancelled = await api.forget(stream_id)
+                print(f"[balance] Stream cancelled: {cancelled}")
+            except Exception:
+                pass  # Connection may already be closing
 
 
 async def watch_ticks(api: DerivAPI, symbol: str, stop: asyncio.Event) -> None:
@@ -79,12 +84,20 @@ async def main() -> None:
             await asyncio.sleep(30)
             stop.set()
 
-        await asyncio.gather(
-            asyncio.create_task(auto_stop()),
-            balance_task,
-            ticks_task,
-            return_exceptions=True,
-        )
+        auto_stop_task = asyncio.create_task(auto_stop())
+
+        # Wait for ticks to finish (it self-terminates after 10 ticks)
+        await ticks_task
+
+        # Signal stop and cancel any remaining tasks
+        stop.set()
+        for task in (balance_task, auto_stop_task):
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
     print("\nDone.")
 

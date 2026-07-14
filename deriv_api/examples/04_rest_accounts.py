@@ -1,10 +1,21 @@
 """
 Example 4 — REST API: account management.
 
-Requires a valid Deriv API token and your App ID.
+IMPORTANT — Authentication:
+  The REST API requires an OAuth2 Bearer token, which is DIFFERENT from the
+  Personal Access Token (PAT) used in the WebSocket examples.
+
+  To obtain an OAuth2 token:
+    1. Register your app at https://developers.deriv.com
+    2. Implement the OAuth2 Authorization Code + PKCE flow:
+       - Authorization: https://auth.deriv.com/oauth2/auth
+       - Token:         https://auth.deriv.com/oauth2/token
+    3. Use the resulting access token as DERIV_OAUTH_TOKEN
+
+  The PAT in DERIV_TOKEN works for WebSocket auth (examples 02, 03) but NOT here.
 
 Run:
-    DERIV_APP_ID=your_app_id DERIV_TOKEN=your_token \
+    DERIV_APP_ID=your_app_id DERIV_OAUTH_TOKEN=your_oauth_token \\
         python -m deriv_api.examples.04_rest_accounts
 """
 
@@ -14,20 +25,26 @@ import os
 from deriv_api import DerivRestClient, DerivAuthError, DerivRequestError
 
 APP_ID = os.environ.get("DERIV_APP_ID", "1089")
-TOKEN = os.environ.get("DERIV_TOKEN", "")
+# OAuth2 Bearer token — distinct from the PAT used in WebSocket examples
+OAUTH_TOKEN = os.environ.get("DERIV_OAUTH_TOKEN", "")
 
 
 async def main() -> None:
-    if not TOKEN:
-        print("Set DERIV_TOKEN before running this example.")
-        return
-
-    async with DerivRestClient(app_id=APP_ID, token=TOKEN) as rest:
-
-        # --- Health check (no auth required) ---
-        print("Checking API health…")
+    # --- Health check (no auth required) ---
+    print("Checking API health…")
+    async with DerivRestClient(app_id=APP_ID) as rest:
         ok = await rest.health()
         print(f"  API is {'healthy ✓' if ok else 'unhealthy ✗'}\n")
+
+    if not OAUTH_TOKEN:
+        print(
+            "DERIV_OAUTH_TOKEN is not set.\n"
+            "The REST API requires an OAuth2 Bearer token (not the PAT from DERIV_TOKEN).\n"
+            "See the module docstring for instructions."
+        )
+        return
+
+    async with DerivRestClient(app_id=APP_ID, token=OAUTH_TOKEN) as rest:
 
         # --- Get accounts ---
         print("Fetching accounts…")

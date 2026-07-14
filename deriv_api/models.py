@@ -187,11 +187,12 @@ class BuyParameters:
     """
     Parameters for buying a contract directly (without a prior proposal).
 
-    ``contract_type``, ``currency``, and ``underlying_symbol`` are required.
+    ``contract_type``, ``currency``, and ``symbol`` are required.
+    Note: the field is named ``symbol`` to match the Deriv API parameter name.
     """
     contract_type: str
     currency: str
-    underlying_symbol: str
+    symbol: str
     amount: float | None = None
     barrier: str | None = None
     barrier2: str | None = None
@@ -211,7 +212,7 @@ class BuyParameters:
         d: dict = {
             "contract_type": self.contract_type,
             "currency": self.currency,
-            "underlying_symbol": self.underlying_symbol,
+            "symbol": self.symbol,
         }
         for attr in (
             "amount", "barrier", "barrier2", "basis", "cancellation",
@@ -352,40 +353,6 @@ class ContractsForRequest:
         if self.req_id is not None:
             d["req_id"] = self.req_id
         return d
-
-
-# ---------------------------------------------------------------------------
-# contracts_list
-# ---------------------------------------------------------------------------
-
-@dataclass
-class ContractsListRequest:
-    """Get the list of all contract categories on the platform."""
-    passthrough: dict | None = None
-    req_id: int | None = None
-
-    def to_dict(self) -> dict:
-        d: dict = {"contracts_list": 1}
-        if self.passthrough is not None:
-            d["passthrough"] = self.passthrough
-        if self.req_id is not None:
-            d["req_id"] = self.req_id
-        return d
-
-
-@dataclass
-class ContractCategory:
-    contract_category: str
-    contract_types: list[str]
-    display_name: str
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "ContractCategory":
-        return cls(
-            contract_category=d["contract_category"],
-            contract_types=d["contract_types"],
-            display_name=d["display_name"],
-        )
 
 
 # ---------------------------------------------------------------------------

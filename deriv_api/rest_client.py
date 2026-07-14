@@ -11,6 +11,8 @@ Covers:
 All methods are async and use ``aiohttp`` under the hood.  The client can be
 used as an async context manager or managed manually.
 
+Base URL: https://api.derivws.com
+
 Usage
 -----
 ::
@@ -36,8 +38,8 @@ from .models import AccountInfo, CreateAccountRequest, LegacyAccount
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_BASE_URL = "https://options.deriv.com"
-_DEFAULT_TRADING_URL = "https://trading.deriv.com"
+_DEFAULT_BASE_URL = "https://api.derivws.com"
+_DEFAULT_TRADING_URL = "https://api.derivws.com"
 
 
 class DerivRestClient:
@@ -53,9 +55,7 @@ class DerivRestClient:
         including ``"Bearer "`` prefix, or just the raw token — the client
         normalises it.
     base_url:
-        Root URL for options API calls.
-    trading_url:
-        Root URL for trading/legacy API calls.
+        Root URL for all API calls. Defaults to ``https://api.derivws.com``.
     timeout:
         Total request timeout in seconds.
     """
@@ -65,13 +65,11 @@ class DerivRestClient:
         app_id: str | int,
         token: str | None = None,
         base_url: str = _DEFAULT_BASE_URL,
-        trading_url: str = _DEFAULT_TRADING_URL,
         timeout: float = 30.0,
     ) -> None:
         self.app_id = str(app_id)
         self.token = self._normalise_token(token) if token else None
         self.base_url = base_url.rstrip("/")
-        self.trading_url = trading_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._session: aiohttp.ClientSession | None = None
 
@@ -262,7 +260,7 @@ class DerivRestClient:
             Keys are login IDs (e.g. ``"CR0001"``); values are lists of
             ``LegacyAccount`` objects with ``account_id`` and ``currency``.
         """
-        url = f"{self.trading_url}/trading/v1/options/legacy/accounts"
+        url = f"{self.base_url}/trading/v1/options/legacy/accounts"
         body = await self._request("GET", url, auth=True)
         loginids: dict = body.get("loginids", {}) if isinstance(body, dict) else {}
         return {
@@ -284,6 +282,6 @@ class DerivRestClient:
             One of ``"complete"``, ``"pending"``, ``"failed"``,
             ``"not_applicable"``.
         """
-        url = f"{self.trading_url}/trading/v1/options/legacy/migration-status"
+        url = f"{self.base_url}/trading/v1/options/legacy/migration-status"
         body = await self._request("GET", url, auth=True)
         return body.get("status", "") if isinstance(body, dict) else str(body)

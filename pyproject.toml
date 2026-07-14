@@ -43,6 +43,9 @@ Homepage = "https://deriv.com"
 "API Docs" = "https://api.deriv.com"
 Repository = "https://github.com/your-org/deriv-api-python"
 
+[project.scripts]
+deriv-setup = "deriv_api.setup_cli:main"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["deriv_api*"]
