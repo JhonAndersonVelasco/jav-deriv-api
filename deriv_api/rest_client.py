@@ -17,7 +17,7 @@ Usage
 -----
 ::
 
-    from deriv_api import DerivRestClient
+    from jav_deriv_api import DerivRestClient
 
     async with DerivRestClient(app_id="1234", token="Bearer YOUR_TOKEN") as rest:
         ok = await rest.health()

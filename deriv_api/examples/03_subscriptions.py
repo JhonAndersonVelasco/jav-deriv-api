@@ -11,7 +11,7 @@ import asyncio
 import os
 import signal
 
-from deriv_api import DerivAPI, DerivRequestError
+from jav_deriv_api import DerivAPI, DerivRequestError
 
 APP_ID = 1089
 TOKEN = os.environ.get("DERIV_TOKEN", "")

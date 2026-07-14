@@ -8,7 +8,7 @@ Run:
 """
 
 import asyncio
-from deriv_api import DerivAPI
+from jav_deriv_api import DerivAPI
 
 APP_ID = 1089  # Deriv's public demo app_id
 

@@ -3,21 +3,21 @@ deriv_api — Python client library for the Deriv API.
 
 WebSocket API (real-time trading):
 
-    from deriv_api import DerivAPI
+    from jav_deriv_api import DerivAPI
 
     async with DerivAPI(app_id=1234, token="YOUR_TOKEN") as api:
         symbols = await api.get_active_symbols()
 
 REST API (account management):
 
-    from deriv_api import DerivRestClient
+    from jav_deriv_api import DerivRestClient
 
     async with DerivRestClient(app_id="1234", token="YOUR_TOKEN") as rest:
         accounts = await rest.get_accounts()
 
 Low-level WebSocket client (escape hatch):
 
-    from deriv_api import DerivClient
+    from jav_deriv_api import DerivClient
 
     async with DerivClient(app_id=1234) as client:
         await client.authorize("YOUR_TOKEN")
@@ -67,14 +67,32 @@ from .models import (
     BuyResponse,
     CancelRequest,
     CancelResponse,
+    ContractCategory,
     ContractUpdateHistoryRequest,
     ContractUpdateRequest,
     ContractsForRequest,
+    ContractsListRequest,
     CreateAccountRequest,
     ForgetAllRequest,
     ForgetRequest,
     LegacyAccount,
     LimitOrder,
+    LogoutRequest,
+    PingRequest,
+    PortfolioRequest,
+    ProfitTableRequest,
+    ProposalOpenContractRequest,
+    ProposalRequest,
+    ProposalResponse,
+    SellRequest,
+    SellResponse,
+    StatementRequest,
+    Tick,
+    TicksHistoryRequest,
+    TicksRequest,
+    TimeRequest,
+    TradingTimesRequest,
+    TransactionRequest,
 )
 from .rest_client import DerivRestClient
 
@@ -99,19 +117,37 @@ __all__ = [
     "BuyRequest",
     "CancelRequest",
     "ContractsForRequest",
+    "ContractsListRequest",
     "ContractUpdateRequest",
     "ContractUpdateHistoryRequest",
     "CreateAccountRequest",
     "ForgetRequest",
     "ForgetAllRequest",
     "LimitOrder",
+    "LogoutRequest",
+    "PingRequest",
+    "PortfolioRequest",
+    "ProfitTableRequest",
+    "ProposalOpenContractRequest",
+    "ProposalRequest",
+    "SellRequest",
+    "StatementRequest",
+    "TicksRequest",
+    "TicksHistoryRequest",
+    "TimeRequest",
+    "TradingTimesRequest",
+    "TransactionRequest",
     # Models — responses / data
     "ActiveSymbol",
     "AccountInfo",
     "BalanceResponse",
     "BuyResponse",
     "CancelResponse",
+    "ContractCategory",
     "LegacyAccount",
+    "ProposalResponse",
+    "SellResponse",
+    "Tick",
 ]
 
 __version__ = "0.1.0"

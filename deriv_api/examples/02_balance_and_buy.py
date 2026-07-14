@@ -10,7 +10,7 @@ Run:
 import asyncio
 import os
 
-from deriv_api import DerivAPI, BuyParameters, DerivAuthError, DerivRequestError
+from jav_deriv_api import DerivAPI, BuyParameters, DerivAuthError, DerivRequestError
 
 APP_ID = 1089
 TOKEN = os.environ.get("DERIV_TOKEN", "")

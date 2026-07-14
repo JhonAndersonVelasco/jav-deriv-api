@@ -22,7 +22,7 @@ Run:
 import asyncio
 import os
 
-from deriv_api import DerivRestClient, DerivAuthError, DerivRequestError
+from jav_deriv_api import DerivRestClient, DerivAuthError, DerivRequestError
 
 APP_ID = os.environ.get("DERIV_APP_ID", "1089")
 # OAuth2 Bearer token — distinct from the PAT used in WebSocket examples

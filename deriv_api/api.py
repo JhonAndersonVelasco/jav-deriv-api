@@ -12,7 +12,7 @@ Usage
 -----
 ::
 
-    from deriv_api import DerivAPI
+    from jav_deriv_api import DerivAPI
 
     async with DerivAPI(app_id=1234, token="YOUR_TOKEN") as api:
         symbols = await api.get_active_symbols()
@@ -41,12 +41,30 @@ from .models import (
     BuyResponse,
     CancelRequest,
     CancelResponse,
+    ContractCategory,
     ContractUpdateHistoryRequest,
     ContractUpdateRequest,
     ContractsForRequest,
+    ContractsListRequest,
     ForgetAllRequest,
     ForgetRequest,
     LimitOrder,
+    LogoutRequest,
+    PingRequest,
+    PortfolioRequest,
+    ProfitTableRequest,
+    ProposalOpenContractRequest,
+    ProposalRequest,
+    ProposalResponse,
+    SellRequest,
+    SellResponse,
+    StatementRequest,
+    Tick,
+    TicksHistoryRequest,
+    TicksRequest,
+    TimeRequest,
+    TradingTimesRequest,
+    TransactionRequest,
 )
 
 
@@ -225,7 +243,7 @@ class DerivAPI:
         ----------
         parameters:
             A ``BuyParameters`` instance with ``contract_type``, ``currency``,
-            ``underlying_symbol``, and any other desired fields.
+            ``symbol``, and any other desired fields.
         price:
             Maximum price you are willing to pay.
         subscribe:
@@ -433,6 +451,500 @@ class DerivAPI:
         req = ForgetAllRequest(stream_types=stream_types)
         response = await self._client.send(req.to_dict())
         return response.get("forget_all", [])
+
+    # ------------------------------------------------------------------
+    # proposal
+    # ------------------------------------------------------------------
+
+    async def get_proposal(
+        self,
+        contract_type: str,
+        currency: str,
+        underlying_symbol: str,
+        *,
+        amount: float | None = None,
+        basis: str | None = None,
+        duration: int | None = None,
+        duration_unit: str | None = None,
+        date_expiry: int | None = None,
+        barrier: str | None = None,
+        barrier2: str | None = None,
+        growth_rate: float | None = None,
+        multiplier: float | None = None,
+        limit_order: LimitOrder | None = None,
+    ) -> ProposalResponse:
+        """
+        Get a one-shot price proposal for a contract.
+
+        Returns a ``ProposalResponse`` whose ``id`` can be passed directly to
+        ``buy()`` to execute the trade.
+
+        Parameters
+        ----------
+        contract_type:
+            E.g. ``"CALL"``, ``"PUT"``, ``"ACCU"``, ``"MULTUP"``.
+        currency:
+            Account currency, e.g. ``"USD"``.
+        underlying_symbol:
+            Symbol code, e.g. ``"R_50"``.
+        amount:
+            Stake or payout amount (depends on ``basis``).
+        basis:
+            ``"stake"`` or ``"payout"``.
+        duration / duration_unit:
+            Contract duration, e.g. ``duration=5, duration_unit="t"`` for 5 ticks.
+        date_expiry:
+            Epoch expiry time (alternative to duration).
+        barrier / barrier2:
+            Barrier value(s) for applicable contract types.
+        growth_rate:
+            For Accumulator contracts.
+        multiplier:
+            For Multiplier contracts.
+        limit_order:
+            ``LimitOrder`` with ``stop_loss`` / ``take_profit`` for Multipliers.
+        """
+        req = ProposalRequest(
+            contract_type=contract_type,
+            currency=currency,
+            underlying_symbol=underlying_symbol,
+            amount=amount,
+            basis=basis,
+            duration=duration,
+            duration_unit=duration_unit,
+            date_expiry=date_expiry,
+            barrier=barrier,
+            barrier2=barrier2,
+            growth_rate=growth_rate,
+            multiplier=multiplier,
+            limit_order=limit_order,
+            subscribe=False,
+        )
+        response = await self._client.send(req.to_dict())
+        return ProposalResponse.from_dict(response)
+
+    async def stream_proposal(
+        self,
+        contract_type: str,
+        currency: str,
+        underlying_symbol: str,
+        **kwargs,
+    ) -> AsyncGenerator[ProposalResponse, None]:
+        """
+        Subscribe to a real-time price stream for a contract.
+
+        Accepts the same keyword arguments as ``get_proposal()``.
+        Yields ``ProposalResponse`` on every price update.
+
+        Example
+        -------
+        ::
+
+            async for price in api.stream_proposal("CALL", "USD", "R_50",
+                                                    amount=10, basis="stake",
+                                                    duration=5, duration_unit="t"):
+                print(price.ask_price)
+                break  # remember to forget the stream when done
+        """
+        req = ProposalRequest(
+            contract_type=contract_type,
+            currency=currency,
+            underlying_symbol=underlying_symbol,
+            subscribe=True,
+            **kwargs,
+        )
+        async for msg in self._client.subscribe(req.to_dict()):
+            yield ProposalResponse.from_dict(msg)
+
+    # ------------------------------------------------------------------
+    # sell
+    # ------------------------------------------------------------------
+
+    async def sell(self, contract_id: int, price: float = 0.0) -> SellResponse:
+        """
+        Sell an open contract.
+
+        Parameters
+        ----------
+        contract_id:
+            The ``contract_id`` from your portfolio or buy receipt.
+        price:
+            Minimum acceptable sell price. Use ``0`` to sell at market.
+
+        Returns
+        -------
+        SellResponse
+        """
+        req = SellRequest(contract_id=contract_id, price=price)
+        response = await self._client.send(req.to_dict())
+        return SellResponse.from_dict(response)
+
+    # ------------------------------------------------------------------
+    # ticks
+    # ------------------------------------------------------------------
+
+    async def stream_ticks(
+        self, symbol: str | list[str]
+    ) -> AsyncGenerator[Tick, None]:
+        """
+        Subscribe to real-time tick updates for one or more symbols.
+
+        Parameters
+        ----------
+        symbol:
+            A single symbol string (e.g. ``"R_50"``) or a list of symbols.
+
+        Yields
+        ------
+        Tick
+
+        Example
+        -------
+        ::
+
+            async for tick in api.stream_ticks("R_50"):
+                print(tick.quote, tick.epoch)
+        """
+        req = TicksRequest(ticks=symbol, subscribe=True)
+        async for msg in self._client.subscribe(req.to_dict()):
+            yield Tick.from_dict(msg)
+
+    # ------------------------------------------------------------------
+    # ticks_history
+    # ------------------------------------------------------------------
+
+    async def get_ticks_history(
+        self,
+        symbol: str,
+        *,
+        end: str = "latest",
+        start: int | None = None,
+        count: int | None = None,
+        style: str = "ticks",
+        granularity: int | None = None,
+        adjust_start_time: bool = False,
+    ) -> dict:
+        """
+        Get historic tick data or OHLC candles for a symbol.
+
+        Parameters
+        ----------
+        symbol:
+            Symbol code, e.g. ``"R_50"``.
+        end:
+            Epoch boundary or ``"latest"``.
+        start:
+            Epoch start boundary (optional).
+        count:
+            Maximum number of ticks/candles to return.
+        style:
+            ``"ticks"`` (default) or ``"candles"``.
+        granularity:
+            Candle width in seconds (only for ``style="candles"``).
+            One of: 60, 120, 180, 300, 600, 900, 1800, 3600, 7200, 14400, 28800, 86400.
+        adjust_start_time:
+            Adjust start time if market is closed at the boundary.
+
+        Returns
+        -------
+        dict
+            Raw response with ``history`` (for ticks) or ``candles`` key.
+        """
+        req = TicksHistoryRequest(
+            ticks_history=symbol,
+            end=end,
+            start=start,
+            count=count,
+            style=style,
+            granularity=granularity,
+            adjust_start_time=adjust_start_time,
+        )
+        return await self._client.send(req.to_dict())
+
+    async def stream_ticks_history(
+        self,
+        symbol: str,
+        *,
+        end: str = "latest",
+        start: int | None = None,
+        style: str = "ticks",
+        granularity: int | None = None,
+    ) -> AsyncGenerator[dict, None]:
+        """
+        Subscribe to candle/tick updates after fetching history.
+
+        Yields the initial history response, then each subsequent tick or
+        OHLC update as a raw dict.
+        """
+        req = TicksHistoryRequest(
+            ticks_history=symbol,
+            end=end,
+            start=start,
+            style=style,
+            granularity=granularity,
+            subscribe=True,
+        )
+        async for msg in self._client.subscribe(req.to_dict()):
+            yield msg
+
+    # ------------------------------------------------------------------
+    # portfolio
+    # ------------------------------------------------------------------
+
+    async def get_portfolio(
+        self, contract_type: list[str] | None = None
+    ) -> list[dict]:
+        """
+        Get currently open contract positions.
+
+        Requires *trade* scope.
+
+        Parameters
+        ----------
+        contract_type:
+            Optional list of contract types to filter by,
+            e.g. ``["CALL", "PUT"]``.
+
+        Returns
+        -------
+        list[dict]
+            Each item is a contract dict from ``portfolio.contracts``.
+        """
+        req = PortfolioRequest(contract_type=contract_type)
+        response = await self._client.send(req.to_dict())
+        return response.get("portfolio", {}).get("contracts", [])
+
+    # ------------------------------------------------------------------
+    # profit_table
+    # ------------------------------------------------------------------
+
+    async def get_profit_table(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        date_from: int | None = None,
+        date_to: int | None = None,
+        description: bool = False,
+        sort: str = "DESC",
+    ) -> dict:
+        """
+        Get a list of sold contracts and their profit/loss.
+
+        Requires *trade* scope.
+
+        Returns
+        -------
+        dict
+            Raw ``profit_table`` object with ``count`` and ``transactions``.
+        """
+        req = ProfitTableRequest(
+            limit=limit,
+            offset=offset,
+            date_from=date_from,
+            date_to=date_to,
+            description=description,
+            sort=sort,
+        )
+        response = await self._client.send(req.to_dict())
+        return response.get("profit_table", {})
+
+    # ------------------------------------------------------------------
+    # statement
+    # ------------------------------------------------------------------
+
+    async def get_statement(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        date_from: int | None = None,
+        date_to: int | None = None,
+        action_type: str | None = None,
+        description: bool = False,
+    ) -> dict:
+        """
+        Get account transaction history.
+
+        Requires *trade* scope.
+
+        Parameters
+        ----------
+        action_type:
+            Filter by type: ``"buy"``, ``"sell"``, ``"deposit"``, ``"withdrawal"``.
+
+        Returns
+        -------
+        dict
+            Raw ``statement`` object with ``count`` and ``transactions``.
+        """
+        req = StatementRequest(
+            limit=limit,
+            offset=offset,
+            date_from=date_from,
+            date_to=date_to,
+            action_type=action_type,
+            description=description,
+        )
+        response = await self._client.send(req.to_dict())
+        return response.get("statement", {})
+
+    # ------------------------------------------------------------------
+    # transaction stream
+    # ------------------------------------------------------------------
+
+    async def stream_transactions(self) -> AsyncGenerator[dict, None]:
+        """
+        Subscribe to real-time transaction updates.
+
+        Requires *trade* scope. Yields raw transaction message dicts.
+
+        Example
+        -------
+        ::
+
+            async for txn in api.stream_transactions():
+                print(txn.get("transaction"))
+        """
+        req = TransactionRequest(subscribe=True)
+        async for msg in self._client.subscribe(req.to_dict()):
+            yield msg
+
+    # ------------------------------------------------------------------
+    # ping / time / trading_times
+    # ------------------------------------------------------------------
+
+    async def ping(self) -> bool:
+        """
+        Send a ping to keep the connection alive and verify connectivity.
+
+        Returns
+        -------
+        bool
+            ``True`` if the server responds with ``"pong"``.
+        """
+        req = PingRequest()
+        response = await self._client.send(req.to_dict())
+        return response.get("ping") == "pong"
+
+    async def get_server_time(self) -> int:
+        """
+        Get the current server time as a Unix epoch integer.
+
+        Returns
+        -------
+        int
+            Current epoch time on the Deriv server.
+        """
+        req = TimeRequest()
+        response = await self._client.send(req.to_dict())
+        return response.get("time", 0)
+
+    async def get_trading_times(self, date: str = "today") -> dict:
+        """
+        Get market opening/closing times for a given date.
+
+        Parameters
+        ----------
+        date:
+            Date string in ``"yyyy-mm-dd"`` format, or ``"today"``.
+
+        Returns
+        -------
+        dict
+            Raw ``trading_times`` object with ``markets`` list.
+        """
+        req = TradingTimesRequest(trading_times=date)
+        response = await self._client.send(req.to_dict())
+        return response.get("trading_times", {})
+
+    # ------------------------------------------------------------------
+    # contracts_list
+    # ------------------------------------------------------------------
+
+    async def get_contracts_list(self) -> list[ContractCategory]:
+        """
+        Get all contract categories available on the platform.
+
+        No authentication required.
+
+        Returns
+        -------
+        list[ContractCategory]
+            Each item has ``contract_category``, ``contract_types``, and
+            ``display_name``.
+        """
+        req = ContractsListRequest()
+        response = await self._client.send(req.to_dict())
+        return [
+            ContractCategory.from_dict(c)
+            for c in response.get("contracts_list", [])
+        ]
+
+    # ------------------------------------------------------------------
+    # proposal_open_contract
+    # ------------------------------------------------------------------
+
+    async def get_proposal_open_contract(
+        self, contract_id: int | None = None
+    ) -> dict:
+        """
+        Get the latest price and details for an open contract.
+
+        Requires *trade* scope.
+
+        Parameters
+        ----------
+        contract_id:
+            Specific contract ID to query. If omitted, returns all open contracts.
+
+        Returns
+        -------
+        dict
+            Raw ``proposal_open_contract`` object.
+        """
+        req = ProposalOpenContractRequest(contract_id=contract_id, subscribe=False)
+        response = await self._client.send(req.to_dict())
+        return response.get("proposal_open_contract", {})
+
+    async def stream_proposal_open_contract(
+        self, contract_id: int | None = None
+    ) -> AsyncGenerator[dict, None]:
+        """
+        Subscribe to real-time updates for an open contract.
+
+        Requires *trade* scope.
+
+        Parameters
+        ----------
+        contract_id:
+            Contract to track. If omitted, streams all open contracts.
+
+        Yields
+        ------
+        dict
+            Raw ``proposal_open_contract`` message dicts.
+        """
+        req = ProposalOpenContractRequest(contract_id=contract_id, subscribe=True)
+        async for msg in self._client.subscribe(req.to_dict()):
+            yield msg
+
+    # ------------------------------------------------------------------
+    # logout
+    # ------------------------------------------------------------------
+
+    async def logout(self) -> bool:
+        """
+        Log out the current session.
+
+        Returns
+        -------
+        bool
+            ``True`` if logout was successful.
+        """
+        req = LogoutRequest()
+        response = await self._client.send(req.to_dict())
+        return bool(response.get("logout"))
 
     # ------------------------------------------------------------------
     # Raw send — escape hatch for any endpoint not wrapped above
