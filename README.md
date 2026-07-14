@@ -1,4 +1,4 @@
-# deriv-api-python
+# jav-deriv-api-python
 
 Async Python client library for the [Deriv](https://deriv.com) trading API.
 
