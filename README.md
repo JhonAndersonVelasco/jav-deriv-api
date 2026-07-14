@@ -1,0 +1,221 @@
+# deriv-api-python
+
+Async Python client library for the [Deriv](https://deriv.com) trading API.
+
+Covers the full WebSocket API (real-time prices, trading, subscriptions) and
+the REST HTTP API (account management).  Built on top of `websockets` and
+`aiohttp`.  Requires Python ≥ 3.11.
+
+---
+
+## Installation
+
+```bash
+pip install websockets aiohttp
+# or, once packaged:
+pip install deriv-api
+```
+
+---
+
+## Quick start
+
+### WebSocket — active symbols (no auth needed)
+
+```python
+import asyncio
+from deriv_api import DerivAPI
+
+async def main():
+    async with DerivAPI(app_id=1089) as api:
+        symbols = await api.get_active_symbols(mode="brief")
+        for s in symbols:
+            print(s.underlying_symbol, s.underlying_symbol_name)
+
+asyncio.run(main())
+```
+
+### WebSocket — check balance and buy a contract
+
+```python
+import asyncio
+from deriv_api import DerivAPI, BuyParameters
+
+async def main():
+    async with DerivAPI(app_id=1089, token="YOUR_TOKEN") as api:
+        balance = await api.get_balance()
+        print(f"{balance.balance:.2f} {balance.currency}")
+
+        params = BuyParameters(
+            contract_type="CALL",
+            currency="USD",
+            underlying_symbol="R_50",
+            amount=1.0,
+            basis="stake",
+            duration=5,
+            duration_unit="t",
+        )
+        receipt = await api.buy_with_parameters(params, price=1.0)
+        print(f"Contract {receipt.contract_id} bought for {receipt.buy_price}")
+
+asyncio.run(main())
+```
+
+### WebSocket — real-time subscriptions
+
+```python
+import asyncio
+from deriv_api import DerivAPI
+
+async def main():
+    async with DerivAPI(app_id=1089, token="YOUR_TOKEN") as api:
+        # Balance stream
+        async for update in api.stream_balance():
+            print(f"Balance: {update.balance} {update.currency}")
+            await api.forget(update.subscription_id)
+            break
+
+        # Raw tick stream (any endpoint via escape hatch)
+        async for msg in api.subscribe({"ticks": "R_50", "subscribe": 1}):
+            tick = msg.get("tick", {})
+            print(tick.get("quote"))
+            sub_id = msg.get("subscription", {}).get("id")
+            await api.forget(sub_id)
+            break
+
+asyncio.run(main())
+```
+
+### REST API — account management
+
+```python
+import asyncio
+from deriv_api import DerivRestClient
+
+async def main():
+    async with DerivRestClient(app_id="1089", token="YOUR_TOKEN") as rest:
+        ok = await rest.health()
+        print("API healthy:", ok)
+
+        accounts = await rest.get_accounts()
+        for acc in accounts:
+            print(acc.account_id, acc.balance, acc.currency)
+
+        status = await rest.get_legacy_migration_status()
+        print("Migration status:", status)
+
+asyncio.run(main())
+```
+
+---
+
+## API reference
+
+### `DerivAPI` — WebSocket (high-level)
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `get_active_symbols(mode, contract_type)` | No | List active symbols |
+| `get_balance()` | Yes | Current account balance |
+| `stream_balance()` | Yes | Real-time balance updates (async generator) |
+| `buy(proposal_id, price)` | Yes | Buy from a proposal |
+| `buy_with_parameters(params, price)` | Yes | Buy with inline parameters |
+| `stream_buy(proposal_id, price)` | Yes | Buy and stream updates (async generator) |
+| `cancel(contract_id)` | Yes | Cancel a contract |
+| `get_contracts_for(symbol)` | No | Available contracts for a symbol |
+| `get_contracts_list()` | No | All contract categories |
+| `update_contract(contract_id, ...)` | Yes | Update stop-loss / take-profit |
+| `get_contract_update_history(contract_id)` | Yes | Contract update history |
+| `forget(stream_id)` | No | Cancel a stream by ID |
+| `forget_all(stream_types)` | No | Cancel all streams by type |
+| `send(payload)` | — | Raw request (escape hatch) |
+| `subscribe(payload)` | — | Raw subscription (escape hatch) |
+
+### `DerivRestClient` — REST HTTP
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `health()` | No | API health check |
+| `get_accounts()` | Yes | List Options trading accounts |
+| `create_account(account_type, currency, group)` | Yes | Create an account |
+| `get_legacy_accounts()` | Yes | Legacy accounts grouped by login ID |
+| `get_legacy_migration_status()` | Yes | Platform upgrade status |
+
+### `DerivClient` — WebSocket (low-level)
+
+Use when you need direct access to the raw WebSocket layer, e.g. to call
+endpoints not yet covered by `DerivAPI`.
+
+```python
+from deriv_api import DerivClient
+
+async with DerivClient(app_id=1089) as client:
+    await client.authorize("YOUR_TOKEN")
+    resp = await client.send({"proposal": 1, "amount": 1, ...})
+```
+
+---
+
+## Error handling
+
+```python
+from deriv_api import (
+    DerivConnectionError,  # network / connection issues
+    DerivAuthError,        # missing or invalid token
+    DerivRequestError,     # API-level error (has .code and .message)
+    DerivTimeoutError,     # no response within timeout
+)
+
+try:
+    balance = await api.get_balance()
+except DerivAuthError as e:
+    print(f"Not authorized: {e.message}")
+except DerivRequestError as e:
+    print(f"API error [{e.code}]: {e.message}")
+```
+
+---
+
+## Running the examples
+
+```bash
+cd deriv_api/examples
+
+# No auth needed
+python 01_active_symbols.py
+
+# Auth required
+export DERIV_TOKEN=your_token
+python 02_balance_and_buy.py
+python 03_subscriptions.py
+
+# REST + auth
+export DERIV_APP_ID=your_app_id
+export DERIV_TOKEN=your_token
+python 04_rest_accounts.py
+```
+
+---
+
+## Project structure
+
+```
+deriv_api/
+├── __init__.py        # Public API surface
+├── client.py          # Low-level WebSocket client (DerivClient)
+├── api.py             # High-level typed methods (DerivAPI)
+├── rest_client.py     # REST HTTP client (DerivRestClient)
+├── models.py          # Request / response dataclasses
+├── exceptions.py      # Exception hierarchy
+└── examples/
+    ├── 01_active_symbols.py
+    ├── 02_balance_and_buy.py
+    ├── 03_subscriptions.py
+    └── 04_rest_accounts.py
+```
+
+---
+
+## License
+
+MIT
