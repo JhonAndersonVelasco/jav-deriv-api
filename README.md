@@ -1,4 +1,4 @@
-# jav-deriv-api-python
+# jav-deriv-api
 
 Async Python client library for the [Deriv](https://deriv.com) trading API.
 
@@ -11,7 +11,7 @@ the REST HTTP API (account management). Built on top of `websockets` and
 ## Installation
 
 ```bash
-pip install deriv-api
+pip install jav-deriv-api
 ```
 
 After installation, run the interactive setup wizard to create your `.env` file:
