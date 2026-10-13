@@ -23,16 +23,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
+import os
 from collections.abc import AsyncGenerator, Callable
-from typing import Any
+from types import TracebackType
+from typing import Any, cast
 
 import websockets
 import websockets.connection
 from websockets.exceptions import ConnectionClosed
 
 from .exceptions import (
-    DerivAPIError,
     DerivConnectionError,
     DerivRequestError,
     DerivTimeoutError,
@@ -41,7 +41,7 @@ from .exceptions import (
 logger = logging.getLogger(__name__)
 
 # Default Deriv WebSocket endpoint
-_DEFAULT_WS_URL = "wss://ws.derivws.com/websockets/v3"
+_DEFAULT_WS_URL = os.environ.get("DERIV_ENDPOINT", "wss://red.derivws.com/websockets/v3")
 
 # Sentinel used to close subscription async-generators cleanly
 _STREAM_CLOSE = object()
@@ -54,12 +54,16 @@ class DerivClient:
     Parameters
     ----------
     app_id:
-        Your Deriv application ID (required by the API).
+        Your Deriv application ID. If not provided, defaults to ``DERIV_APP_ID``,
+        or ``1089``.
     token:
-        Optional API token. If provided, ``authorize()`` is called automatically
-        on every (re)connect.
+        Optional API token. If not provided, defaults to ``DERIV_TOKEN``.
+        If a Personal Access Token (PAT, starting with ``pat_``) is used,
+        the client automatically resolves the WebSocket URL via OTP.
     endpoint:
-        WebSocket URL. Defaults to the public Deriv endpoint.
+        WebSocket URL. Defaults to the production Deriv endpoint.
+    account_id:
+        Optional account ID to trade on (e.g. ``"DOT93852030"``) when using OTP.
     request_timeout:
         Seconds to wait for a response before raising ``DerivTimeoutError``.
     ping_interval:
@@ -74,18 +78,27 @@ class DerivClient:
 
     def __init__(
         self,
-        app_id: int,
+        app_id: int | str | None = None,
         token: str | None = None,
-        endpoint: str = _DEFAULT_WS_URL,
+        endpoint: str | None = None,
+        account_id: str | None = None,
         request_timeout: float = 30.0,
         ping_interval: float = 30.0,
         reconnect: bool = True,
         reconnect_attempts: int = 5,
         reconnect_delay: float = 2.0,
     ) -> None:
+        if app_id is None:
+            env_app_id = os.environ.get("DERIV_APP_ID")
+            app_id = env_app_id if env_app_id is not None else 1089
         self.app_id = app_id
+        if token is None:
+            token = os.environ.get("DERIV_TOKEN")
         self.token = token
+        if endpoint is None:
+            endpoint = os.environ.get("DERIV_ENDPOINT", _DEFAULT_WS_URL)
         self.endpoint = endpoint
+        self.account_id = account_id
         self.request_timeout = request_timeout
         self.ping_interval = ping_interval
         self.reconnect = reconnect
@@ -94,14 +107,14 @@ class DerivClient:
 
         self._ws: websockets.ClientConnection | None = None
         self._req_id: int = 0
-        self._pending: dict[int, asyncio.Future] = {}
+        self._pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
         # subscription_id -> asyncio.Queue
-        self._subscriptions: dict[str, asyncio.Queue] = {}
+        self._subscriptions: dict[str, asyncio.Queue[Any]] = {}
         # msg_type -> list of callback(dict)
-        self._stream_callbacks: dict[str, list[Callable]] = {}
+        self._stream_callbacks: dict[str, list[Callable[[dict[str, Any]], Any]]] = {}
 
-        self._recv_task: asyncio.Task | None = None
-        self._ping_task: asyncio.Task | None = None
+        self._recv_task: asyncio.Task[None] | None = None
+        self._ping_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
         self._connected = asyncio.Event()
         self._closing = False
@@ -112,7 +125,14 @@ class DerivClient:
     # ------------------------------------------------------------------
 
     def _build_url(self) -> str:
-        return f"{self.endpoint}?app_id={self.app_id}"
+        if "otp=" in self.endpoint:
+            return self.endpoint
+        separator = "&" if "?" in self.endpoint else "?"
+        # Legacy websockets/v3 expects a numeric app_id; if using OAuth string, default to 1089
+        app_id_val = self.app_id
+        if isinstance(app_id_val, str) and not app_id_val.isdigit():
+            app_id_val = 1089
+        return f"{self.endpoint}{separator}app_id={app_id_val}"
 
     def _is_ws_open(self) -> bool:
         """Return True if the WebSocket connection is currently open."""
@@ -121,15 +141,37 @@ class DerivClient:
         # websockets >= 14 uses a State enum; older versions had a .closed bool.
         state = getattr(self._ws, "state", None)
         if state is not None:
-            return state is websockets.connection.State.OPEN
+            return bool(state is websockets.connection.State.OPEN)
         # Fallback for any older installation that still has .closed
-        return not self._ws.closed  # type: ignore[attr-defined]
+        return not getattr(self._ws, "closed", True)
 
     async def connect(self) -> None:
         """Open the WebSocket connection and start background tasks."""
         if self._ws is not None and self._is_ws_open():
             return
         self._closing = False
+
+        # If using a Personal Access Token (PAT) and not already on an OTP URL,
+        # resolve the pre-authenticated WebSocket URL via DerivRestClient
+        needs_otp = self.token and (self.token.startswith("pat_") or self.account_id)
+        if needs_otp and "otp=" not in self.endpoint:
+            from .rest_client import DerivRestClient
+
+            async with DerivRestClient(app_id=self.app_id, token=self.token) as rest:
+                target_account_id = self.account_id
+                if not target_account_id:
+                    accounts = await rest.get_accounts()
+                    demo_accs = [
+                        a
+                        for a in accounts
+                        if a.account_type == "demo" or a.account_id.startswith("D")
+                    ]
+                    target = demo_accs[0] if demo_accs else (accounts[0] if accounts else None)
+                    if target:
+                        target_account_id = target.account_id
+                if target_account_id:
+                    self.endpoint = await rest.get_otp_url(target_account_id)
+
         await self._do_connect()
 
     async def _do_connect(self) -> None:
@@ -142,18 +184,40 @@ class DerivClient:
                 close_timeout=5,
             )
         except Exception as exc:
-            raise DerivConnectionError(f"Failed to connect to {url}: {exc}") from exc
+            # Fallback if ws.derivws.com fails
+            if "ws.derivws.com" in url and "otp=" not in url:
+                fallback_url = url.replace("ws.derivws.com", "red.derivws.com")
+                logger.warning(
+                    "Connection to %s failed (%s). Retrying fallback %s...",
+                    url,
+                    exc,
+                    fallback_url,
+                )
+                try:
+                    self._ws = await websockets.connect(
+                        fallback_url,
+                        ping_interval=None,
+                        close_timeout=5,
+                    )
+                    url = fallback_url
+                    self.endpoint = self.endpoint.replace("ws.derivws.com", "red.derivws.com")
+                except Exception as fb_exc:
+                    err_msg = f"Failed to connect to {url}: {exc}; fallback failed: {fb_exc}"
+                    raise DerivConnectionError(err_msg) from fb_exc
+            else:
+                raise DerivConnectionError(f"Failed to connect to {url}: {exc}") from exc
 
         self._connected.set()
-        self._authorized = False
+        # If connecting via an OTP URL, session is pre-authorized by Deriv
+        self._authorized = "otp=" in url
         logger.info("Connected to Deriv API (%s)", url)
 
         # Start background receiver and pinger
         self._recv_task = asyncio.create_task(self._recv_loop(), name="deriv_recv")
         self._ping_task = asyncio.create_task(self._ping_loop(), name="deriv_ping")
 
-        # Auto-authorize if a token was provided
-        if self.token:
+        # Auto-authorize if a token was provided and not using OTP
+        if self.token and not self._authorized:
             await self.authorize(self.token)
 
     async def disconnect(self) -> None:
@@ -214,6 +278,8 @@ class DerivClient:
     async def _recv_loop(self) -> None:
         """Continuously read messages from the WebSocket and dispatch them."""
         while True:
+            if self._ws is None:
+                break
             try:
                 raw = await self._ws.recv()
             except ConnectionClosed:
@@ -226,7 +292,7 @@ class DerivClient:
                 return
 
             try:
-                message: dict = json.loads(raw)
+                message: dict[str, Any] = json.loads(raw)
             except json.JSONDecodeError:
                 logger.warning("Received non-JSON message: %s", raw[:200])
                 continue
@@ -247,14 +313,12 @@ class DerivClient:
     # Message dispatch
     # ------------------------------------------------------------------
 
-    async def _dispatch(self, message: dict) -> None:
+    async def _dispatch(self, message: dict[str, Any]) -> None:
         """Route an incoming message to its pending future or subscription queue."""
         if "error" in message:
             req_id = message.get("req_id")
             if req_id and req_id in self._pending:
-                self._pending.pop(req_id).set_exception(
-                    DerivRequestError.from_response(message)
-                )
+                self._pending.pop(req_id).set_exception(DerivRequestError.from_response(message))
             else:
                 logger.error("API error (unsolicited): %s", message["error"])
             return
@@ -315,7 +379,7 @@ class DerivClient:
         payload: dict[str, Any],
         *,
         timeout: float | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Send a request and wait for the corresponding response.
 
@@ -328,7 +392,7 @@ class DerivClient:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             The raw API response dict (with ``echo_req``, ``msg_type``, etc.).
 
         Raises
@@ -347,7 +411,7 @@ class DerivClient:
         payload = {**payload, "req_id": req_id}
 
         loop = asyncio.get_running_loop()
-        fut: asyncio.Future = loop.create_future()
+        fut: asyncio.Future[dict[str, Any]] = loop.create_future()
         self._pending[req_id] = fut
 
         await self._ws.send(json.dumps(payload))
@@ -358,9 +422,7 @@ class DerivClient:
             result = await asyncio.wait_for(asyncio.shield(fut), timeout=wait)
         except asyncio.TimeoutError:
             self._pending.pop(req_id, None)
-            raise DerivTimeoutError(
-                f"Request timed out after {wait}s (req_id={req_id})"
-            )
+            raise DerivTimeoutError(f"Request timed out after {wait}s (req_id={req_id})")
 
         logger.debug("← %s (req_id=%d)", result.get("msg_type"), req_id)
         return result
@@ -370,7 +432,7 @@ class DerivClient:
         payload: dict[str, Any],
         *,
         timeout: float | None = None,
-    ) -> AsyncGenerator[dict, None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Send a subscription request and yield incoming stream messages.
 
@@ -386,7 +448,7 @@ class DerivClient:
 
         Yields
         ------
-        dict
+        dict[str, Any]
             Raw API message dicts from the stream.
 
         Example
@@ -402,9 +464,9 @@ class DerivClient:
         req_id = self._next_req_id()
         payload = {**payload, "req_id": req_id}
 
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue[Any] = asyncio.Queue()
         loop = asyncio.get_running_loop()
-        fut: asyncio.Future = loop.create_future()
+        fut: asyncio.Future[dict[str, Any]] = loop.create_future()
         self._pending[req_id] = fut
 
         await self._ws.send(json.dumps(payload))
@@ -415,9 +477,7 @@ class DerivClient:
             first = await asyncio.wait_for(asyncio.shield(fut), timeout=wait)
         except asyncio.TimeoutError:
             self._pending.pop(req_id, None)
-            raise DerivTimeoutError(
-                f"Subscription timed out after {wait}s (req_id={req_id})"
-            )
+            raise DerivTimeoutError(f"Subscription timed out after {wait}s (req_id={req_id})")
 
         sub_info = first.get("subscription", {})
         sub_id = sub_info.get("id") if sub_info else None
@@ -442,11 +502,11 @@ class DerivClient:
 
                 if item is _STREAM_CLOSE:
                     break
-                yield item
+                yield cast(dict[str, Any], item)
         finally:
             self._subscriptions.pop(sub_id, None)
 
-    async def forget_stream(self, stream_id: str) -> dict:
+    async def forget_stream(self, stream_id: str) -> dict[str, Any]:
         """
         Unsubscribe from a specific stream.
 
@@ -462,7 +522,7 @@ class DerivClient:
             self._subscriptions.pop(stream_id, None)
         return result
 
-    async def forget_all_streams(self, stream_types: str | list[str]) -> dict:
+    async def forget_all_streams(self, stream_types: str | list[str]) -> dict[str, Any]:
         """Unsubscribe from all streams of the given type(s)."""
         return await self.send({"forget_all": stream_types})
 
@@ -470,7 +530,7 @@ class DerivClient:
     # Authorization
     # ------------------------------------------------------------------
 
-    async def authorize(self, token: str) -> dict:
+    async def authorize(self, token: str) -> dict[str, Any]:
         """
         Authorize the session with an API token.
 
@@ -481,7 +541,7 @@ class DerivClient:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Raw ``authorize`` response.
         """
         response = await self.send({"authorize": token})
@@ -504,9 +564,14 @@ class DerivClient:
     # Async context manager
     # ------------------------------------------------------------------
 
-    async def __aenter__(self) -> "DerivClient":
+    async def __aenter__(self) -> DerivClient:
         await self.connect()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         await self.disconnect()

@@ -28,9 +28,11 @@ Usage
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from typing import Any
+from types import TracebackType
+from typing import Any, cast
 
 from .client import DerivClient
+from .exceptions import DerivRequestError
 from .models import (
     ActiveSymbol,
     ActiveSymbolsRequest,
@@ -42,12 +44,11 @@ from .models import (
     CancelRequest,
     CancelResponse,
     ContractCategory,
-    ContractUpdateHistoryRequest,
-    ContractUpdateRequest,
     ContractsForRequest,
     ContractsListRequest,
+    ContractUpdateHistoryRequest,
+    ContractUpdateRequest,
     ForgetAllRequest,
-    ForgetRequest,
     LimitOrder,
     LogoutRequest,
     PingRequest,
@@ -83,18 +84,28 @@ class DerivAPI:
         (e.g. ``endpoint``, ``request_timeout``, ``reconnect``).
     """
 
-    def __init__(self, app_id: int, token: str | None = None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        app_id: int | str | None = None,
+        token: str | None = None,
+        **kwargs: Any,
+    ) -> None:
         self._client = DerivClient(app_id=app_id, token=token, **kwargs)
 
     # ------------------------------------------------------------------
     # Async context manager — delegates to the underlying client
     # ------------------------------------------------------------------
 
-    async def __aenter__(self) -> "DerivAPI":
+    async def __aenter__(self) -> DerivAPI:
         await self._client.connect()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         await self._client.disconnect()
 
     # ------------------------------------------------------------------
@@ -109,7 +120,7 @@ class DerivAPI:
         """Close the WebSocket connection gracefully."""
         await self._client.disconnect()
 
-    async def authorize(self, token: str) -> dict:
+    async def authorize(self, token: str) -> dict[str, Any]:
         """
         Authorize the current session with an API token.
 
@@ -237,7 +248,10 @@ class DerivAPI:
         subscribe: bool = False,
     ) -> BuyResponse:
         """
-        Buy a contract by passing parameters directly (no prior proposal needed).
+        Buy a contract by passing parameters directly.
+
+        In the new Deriv Options API, if direct parameter purchase is rejected,
+        this automatically obtains an active price proposal and executes the buy.
 
         Parameters
         ----------
@@ -252,31 +266,35 @@ class DerivAPI:
         Returns
         -------
         BuyResponse
-
-        Example
-        -------
-        ::
-
-            params = BuyParameters(
-                contract_type="CALL",
-                currency="USD",
-                symbol="R_50",
-                amount=10.0,
-                basis="stake",
-                duration=5,
-                duration_unit="t",
-            )
-            receipt = await api.buy_with_parameters(params, price=10.0)
         """
-        req = BuyRequest(buy="1", price=price, parameters=parameters, subscribe=subscribe)
-        response = await self._client.send(req.to_dict())
-        return BuyResponse.from_dict(response)
+        try:
+            req = BuyRequest(buy="1", price=price, parameters=parameters, subscribe=subscribe)
+            response = await self._client.send(req.to_dict())
+            return BuyResponse.from_dict(response)
+        except DerivRequestError as exc:
+            if "parameters" in str(exc).lower() or "validation" in str(exc).lower():
+                prop = await self.get_proposal(
+                    contract_type=parameters.contract_type,
+                    currency=parameters.currency,
+                    underlying_symbol=parameters.symbol,
+                    amount=parameters.amount or price,
+                    basis=parameters.basis or "stake",
+                    duration=parameters.duration,
+                    duration_unit=parameters.duration_unit,
+                    barrier=parameters.barrier,
+                    barrier2=parameters.barrier2,
+                    growth_rate=parameters.growth_rate,
+                    multiplier=parameters.multiplier,
+                    subscribe=True,
+                )
+                return await self.buy(prop.id, price=price, subscribe=subscribe)
+            raise
 
     async def stream_buy(
         self,
         proposal_id: str,
         price: float,
-    ) -> AsyncGenerator[dict, None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Buy a contract and stream its open-contract updates.
 
@@ -286,7 +304,7 @@ class DerivAPI:
 
         Yields
         ------
-        dict
+        dict[str, Any]
         """
         req = BuyRequest(buy=proposal_id, price=price, subscribe=True)
         async for msg in self._client.subscribe(req.to_dict()):
@@ -316,7 +334,7 @@ class DerivAPI:
     # contracts_for
     # ------------------------------------------------------------------
 
-    async def get_contracts_for(self, symbol: str) -> dict:
+    async def get_contracts_for(self, symbol: str) -> dict[str, Any]:
         """
         Get all available contracts and their limits for a given symbol.
 
@@ -327,13 +345,13 @@ class DerivAPI:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             The ``contracts_for`` object as returned by the API, with an
             ``"available"`` list of contract detail dicts.
         """
         req = ContractsForRequest(symbol=symbol)
         response = await self._client.send(req.to_dict())
-        return response.get("contracts_for", {})
+        return cast(dict[str, Any], response.get("contracts_for") or {})
 
     # ------------------------------------------------------------------
     # contract_update
@@ -345,7 +363,7 @@ class DerivAPI:
         *,
         stop_loss: float | None = None,
         take_profit: float | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Update the stop-loss or take-profit on an open contract.
 
@@ -363,7 +381,7 @@ class DerivAPI:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             The ``contract_update`` object from the API response.
         """
         req = ContractUpdateRequest(
@@ -371,7 +389,7 @@ class DerivAPI:
             limit_order=LimitOrder(stop_loss=stop_loss, take_profit=take_profit),
         )
         response = await self._client.send(req.to_dict())
-        return response.get("contract_update", {})
+        return cast(dict[str, Any], response.get("contract_update") or {})
 
     # ------------------------------------------------------------------
     # contract_update_history
@@ -381,7 +399,7 @@ class DerivAPI:
         self,
         contract_id: int,
         limit: int = 500,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """
         Get the update history for a contract.
 
@@ -396,13 +414,13 @@ class DerivAPI:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             Each item contains ``display_name``, ``order_amount``,
             ``order_date``, ``order_type``, and ``value``.
         """
         req = ContractUpdateHistoryRequest(contract_id=contract_id, limit=limit)
         response = await self._client.send(req.to_dict())
-        return response.get("contract_update_history", [])
+        return cast(list[dict[str, Any]], response.get("contract_update_history") or [])
 
     # ------------------------------------------------------------------
     # forget / forget_all
@@ -450,7 +468,7 @@ class DerivAPI:
         """
         req = ForgetAllRequest(stream_types=stream_types)
         response = await self._client.send(req.to_dict())
-        return response.get("forget_all", [])
+        return cast(list[str], response.get("forget_all") or [])
 
     # ------------------------------------------------------------------
     # proposal
@@ -460,8 +478,9 @@ class DerivAPI:
         self,
         contract_type: str,
         currency: str,
-        underlying_symbol: str,
+        underlying_symbol: str | None = None,
         *,
+        symbol: str | None = None,
         amount: float | None = None,
         basis: str | None = None,
         duration: int | None = None,
@@ -472,9 +491,10 @@ class DerivAPI:
         growth_rate: float | None = None,
         multiplier: float | None = None,
         limit_order: LimitOrder | None = None,
+        subscribe: bool = True,
     ) -> ProposalResponse:
         """
-        Get a one-shot price proposal for a contract.
+        Get a price proposal for a contract.
 
         Returns a ``ProposalResponse`` whose ``id`` can be passed directly to
         ``buy()`` to execute the trade.
@@ -485,7 +505,7 @@ class DerivAPI:
             E.g. ``"CALL"``, ``"PUT"``, ``"ACCU"``, ``"MULTUP"``.
         currency:
             Account currency, e.g. ``"USD"``.
-        underlying_symbol:
+        underlying_symbol / symbol:
             Symbol code, e.g. ``"R_50"``.
         amount:
             Stake or payout amount (depends on ``basis``).
@@ -503,11 +523,18 @@ class DerivAPI:
             For Multiplier contracts.
         limit_order:
             ``LimitOrder`` with ``stop_loss`` / ``take_profit`` for Multipliers.
+        subscribe:
+            Whether to subscribe/cache the proposal in the session (default ``True``).
+            Deriv requires this to be ``True`` to buy the proposal via ``api.buy()``.
         """
+        target_symbol = underlying_symbol or symbol
+        if not target_symbol:
+            raise ValueError("Either underlying_symbol or symbol must be provided.")
+
         req = ProposalRequest(
             contract_type=contract_type,
             currency=currency,
-            underlying_symbol=underlying_symbol,
+            underlying_symbol=target_symbol,
             amount=amount,
             basis=basis,
             duration=duration,
@@ -518,7 +545,7 @@ class DerivAPI:
             growth_rate=growth_rate,
             multiplier=multiplier,
             limit_order=limit_order,
-            subscribe=False,
+            subscribe=subscribe,
         )
         response = await self._client.send(req.to_dict())
         return ProposalResponse.from_dict(response)
@@ -527,8 +554,10 @@ class DerivAPI:
         self,
         contract_type: str,
         currency: str,
-        underlying_symbol: str,
-        **kwargs,
+        underlying_symbol: str | None = None,
+        *,
+        symbol: str | None = None,
+        **kwargs: Any,
     ) -> AsyncGenerator[ProposalResponse, None]:
         """
         Subscribe to a real-time price stream for a contract.
@@ -546,10 +575,13 @@ class DerivAPI:
                 print(price.ask_price)
                 break  # remember to forget the stream when done
         """
+        target_symbol = underlying_symbol or symbol
+        if not target_symbol:
+            raise ValueError("Either underlying_symbol or symbol must be provided.")
         req = ProposalRequest(
             contract_type=contract_type,
             currency=currency,
-            underlying_symbol=underlying_symbol,
+            underlying_symbol=target_symbol,
             subscribe=True,
             **kwargs,
         )
@@ -583,9 +615,7 @@ class DerivAPI:
     # ticks
     # ------------------------------------------------------------------
 
-    async def stream_ticks(
-        self, symbol: str | list[str]
-    ) -> AsyncGenerator[Tick, None]:
+    async def stream_ticks(self, symbol: str | list[str]) -> AsyncGenerator[Tick, None]:
         """
         Subscribe to real-time tick updates for one or more symbols.
 
@@ -623,7 +653,7 @@ class DerivAPI:
         style: str = "ticks",
         granularity: int | None = None,
         adjust_start_time: bool = False,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Get historic tick data or OHLC candles for a symbol.
 
@@ -647,7 +677,7 @@ class DerivAPI:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Raw response with ``history`` (for ticks) or ``candles`` key.
         """
         req = TicksHistoryRequest(
@@ -669,7 +699,7 @@ class DerivAPI:
         start: int | None = None,
         style: str = "ticks",
         granularity: int | None = None,
-    ) -> AsyncGenerator[dict, None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Subscribe to candle/tick updates after fetching history.
 
@@ -691,9 +721,7 @@ class DerivAPI:
     # portfolio
     # ------------------------------------------------------------------
 
-    async def get_portfolio(
-        self, contract_type: list[str] | None = None
-    ) -> list[dict]:
+    async def get_portfolio(self, contract_type: list[str] | None = None) -> list[dict[str, Any]]:
         """
         Get currently open contract positions.
 
@@ -707,12 +735,13 @@ class DerivAPI:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             Each item is a contract dict from ``portfolio.contracts``.
         """
         req = PortfolioRequest(contract_type=contract_type)
         response = await self._client.send(req.to_dict())
-        return response.get("portfolio", {}).get("contracts", [])
+        portfolio = response.get("portfolio") or {}
+        return cast(list[dict[str, Any]], portfolio.get("contracts", []))
 
     # ------------------------------------------------------------------
     # profit_table
@@ -723,11 +752,11 @@ class DerivAPI:
         *,
         limit: int = 100,
         offset: int = 0,
-        date_from: int | None = None,
-        date_to: int | None = None,
+        date_from: int | str | None = None,
+        date_to: int | str | None = None,
         description: bool = False,
         sort: str = "DESC",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Get a list of sold contracts and their profit/loss.
 
@@ -735,7 +764,7 @@ class DerivAPI:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Raw ``profit_table`` object with ``count`` and ``transactions``.
         """
         req = ProfitTableRequest(
@@ -747,7 +776,7 @@ class DerivAPI:
             sort=sort,
         )
         response = await self._client.send(req.to_dict())
-        return response.get("profit_table", {})
+        return cast(dict[str, Any], response.get("profit_table") or {})
 
     # ------------------------------------------------------------------
     # statement
@@ -762,7 +791,7 @@ class DerivAPI:
         date_to: int | None = None,
         action_type: str | None = None,
         description: bool = False,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Get account transaction history.
 
@@ -775,7 +804,7 @@ class DerivAPI:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Raw ``statement`` object with ``count`` and ``transactions``.
         """
         req = StatementRequest(
@@ -787,13 +816,13 @@ class DerivAPI:
             description=description,
         )
         response = await self._client.send(req.to_dict())
-        return response.get("statement", {})
+        return cast(dict[str, Any], response.get("statement") or {})
 
     # ------------------------------------------------------------------
     # transaction stream
     # ------------------------------------------------------------------
 
-    async def stream_transactions(self) -> AsyncGenerator[dict, None]:
+    async def stream_transactions(self) -> AsyncGenerator[dict[str, Any], None]:
         """
         Subscribe to real-time transaction updates.
 
@@ -825,7 +854,7 @@ class DerivAPI:
         """
         req = PingRequest()
         response = await self._client.send(req.to_dict())
-        return response.get("ping") == "pong"
+        return bool(response.get("ping") == "pong")
 
     async def get_server_time(self) -> int:
         """
@@ -838,9 +867,9 @@ class DerivAPI:
         """
         req = TimeRequest()
         response = await self._client.send(req.to_dict())
-        return response.get("time", 0)
+        return int(response.get("time") or 0)
 
-    async def get_trading_times(self, date: str = "today") -> dict:
+    async def get_trading_times(self, date: str = "today") -> dict[str, Any]:
         """
         Get market opening/closing times for a given date.
 
@@ -851,12 +880,12 @@ class DerivAPI:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Raw ``trading_times`` object with ``markets`` list.
         """
         req = TradingTimesRequest(trading_times=date)
         response = await self._client.send(req.to_dict())
-        return response.get("trading_times", {})
+        return cast(dict[str, Any], response.get("trading_times") or {})
 
     # ------------------------------------------------------------------
     # contracts_list
@@ -876,18 +905,13 @@ class DerivAPI:
         """
         req = ContractsListRequest()
         response = await self._client.send(req.to_dict())
-        return [
-            ContractCategory.from_dict(c)
-            for c in response.get("contracts_list", [])
-        ]
+        return [ContractCategory.from_dict(c) for c in response.get("contracts_list", [])]
 
     # ------------------------------------------------------------------
     # proposal_open_contract
     # ------------------------------------------------------------------
 
-    async def get_proposal_open_contract(
-        self, contract_id: int | None = None
-    ) -> dict:
+    async def get_proposal_open_contract(self, contract_id: int | None = None) -> dict[str, Any]:
         """
         Get the latest price and details for an open contract.
 
@@ -900,16 +924,16 @@ class DerivAPI:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Raw ``proposal_open_contract`` object.
         """
         req = ProposalOpenContractRequest(contract_id=contract_id, subscribe=False)
         response = await self._client.send(req.to_dict())
-        return response.get("proposal_open_contract", {})
+        return cast(dict[str, Any], response.get("proposal_open_contract") or {})
 
     async def stream_proposal_open_contract(
         self, contract_id: int | None = None
-    ) -> AsyncGenerator[dict, None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Subscribe to real-time updates for an open contract.
 
@@ -922,7 +946,7 @@ class DerivAPI:
 
         Yields
         ------
-        dict
+        dict[str, Any]
             Raw ``proposal_open_contract`` message dicts.
         """
         req = ProposalOpenContractRequest(contract_id=contract_id, subscribe=True)
@@ -950,7 +974,9 @@ class DerivAPI:
     # Raw send — escape hatch for any endpoint not wrapped above
     # ------------------------------------------------------------------
 
-    async def send(self, payload: dict[str, Any], *, timeout: float | None = None) -> dict:
+    async def send(
+        self, payload: dict[str, Any], *, timeout: float | None = None
+    ) -> dict[str, Any]:
         """
         Send a raw request dict and return the raw response dict.
 
@@ -966,7 +992,7 @@ class DerivAPI:
 
     async def subscribe(
         self, payload: dict[str, Any], *, timeout: float | None = None
-    ) -> AsyncGenerator[dict, None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Send a subscription request and yield raw response dicts.
 

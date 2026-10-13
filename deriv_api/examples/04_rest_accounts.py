@@ -1,89 +1,86 @@
 """
-Example 4 — REST API: account management.
+Example 4 — REST API: account management and OTP generation.
 
-IMPORTANT — Authentication:
-  The REST API requires an OAuth2 Bearer token, which is DIFFERENT from the
-  Personal Access Token (PAT) used in the WebSocket examples.
-
-  To obtain an OAuth2 token:
-    1. Register your app at https://developers.deriv.com
-    2. Implement the OAuth2 Authorization Code + PKCE flow:
-       - Authorization: https://auth.deriv.com/oauth2/auth
-       - Token:         https://auth.deriv.com/oauth2/token
-    3. Use the resulting access token as DERIV_OAUTH_TOKEN
-
-  The PAT in DERIV_TOKEN works for WebSocket auth (examples 02, 03) but NOT here.
+Demonstrates the HTTP REST client for the Deriv Options API:
+- Health check (unauthenticated)
+- Account listing (using PAT as Bearer token with Deriv-App-ID)
+- Querying migration status
+- Generating a pre-authorized OTP WebSocket URL for trading
 
 Run:
-    DERIV_APP_ID=your_app_id DERIV_OAUTH_TOKEN=your_oauth_token \\
-        python -m deriv_api.examples.04_rest_accounts
+    DERIV_TOKEN=your_token python -m deriv_api.examples.04_rest_accounts
 """
 
 import asyncio
 import os
 
-from jav_deriv_api import DerivRestClient, DerivAuthError, DerivRequestError
+from deriv_api import DerivAuthError, DerivRequestError, DerivRestClient
 
-APP_ID = os.environ.get("DERIV_APP_ID", "1089")
-# OAuth2 Bearer token — distinct from the PAT used in WebSocket examples
-OAUTH_TOKEN = os.environ.get("DERIV_OAUTH_TOKEN", "")
+# DERIV_APP_ID is loaded automatically from deriv_api/.env if not provided in environment
+APP_ID = os.environ.get("DERIV_APP_ID")
+# Personal Access Tokens (PAT) work directly as Bearer tokens in the Deriv Options API
+TOKEN = os.environ.get("DERIV_TOKEN") or os.environ.get("DERIV_OAUTH_TOKEN", "")
 
 
 async def main() -> None:
-    # --- Health check (no auth required) ---
-    print("Checking API health…")
+    # ── Step 1: Health check (no auth required) ───────────────────────
+    print("1. Checking Deriv API health…")
     async with DerivRestClient(app_id=APP_ID) as rest:
         ok = await rest.health()
-        print(f"  API is {'healthy ✓' if ok else 'unhealthy ✗'}\n")
+        print(f"   API status: {'healthy ✓' if ok else 'unhealthy ✗'}\n")
 
-    if not OAUTH_TOKEN:
+    if not TOKEN:
         print(
-            "DERIV_OAUTH_TOKEN is not set.\n"
-            "The REST API requires an OAuth2 Bearer token (not the PAT from DERIV_TOKEN).\n"
-            "See the module docstring for instructions."
+            "Please set the DERIV_TOKEN environment variable to test authenticated REST endpoints."
         )
+        print("Example: export DERIV_TOKEN='pat_...'")
         return
 
-    async with DerivRestClient(app_id=APP_ID, token=OAUTH_TOKEN) as rest:
-
-        # --- Get accounts ---
-        print("Fetching accounts…")
+    # ── Step 2: Query accounts with Bearer token + Deriv-App-ID ────────
+    print("2. Fetching account information via REST…")
+    async with DerivRestClient(app_id=APP_ID, token=TOKEN) as rest:
         try:
             accounts = await rest.get_accounts()
             if not accounts:
-                print("  No accounts found.")
-            else:
-                print(f"  {'Account ID':<15} {'Type':<8} {'Status':<10} {'Balance':>10}  Currency")
-                print("  " + "-" * 55)
-                for acc in accounts:
-                    print(
-                        f"  {acc.account_id:<15} {acc.account_type:<8} {acc.status:<10} "
-                        f"{acc.balance:>10.2f}  {acc.currency}"
-                    )
+                print("   No accounts found for this token.")
+                return
+
+            print(f"   {'Account ID':<15} {'Type':<8} {'Status':<10} {'Balance':>10}  Currency")
+            print("   " + "-" * 55)
+            target_demo_account = None
+            for acc in accounts:
+                print(
+                    f"   {acc.account_id:<15} {acc.account_type:<8} {acc.status:<10} "
+                    f"{acc.balance:>10.2f}  {acc.currency}"
+                )
+                if acc.account_type == "demo" or acc.account_id.startswith("D"):
+                    target_demo_account = acc.account_id
+
+            if not target_demo_account and accounts:
+                target_demo_account = accounts[0].account_id
+
         except DerivAuthError as e:
-            print(f"  Auth error: {e.message}")
+            print(f"   Auth error: {e.message}")
             return
 
-        # --- Create a demo account (idempotent — safe to call repeatedly) ---
-        print("\nCreating (or fetching existing) demo account…")
-        try:
-            result = await rest.create_account(account_type="demo")
-            if isinstance(result, list):
-                print(f"  Created {len(result)} new account(s):")
-                for acc in result:
-                    print(f"    {acc.account_id}  {acc.account_type}  {acc.currency}")
-            else:
-                print(f"  Account already exists: {result.account_id} ({result.status})")
-        except DerivRequestError as e:
-            print(f"  Could not create account: [{e.code}] {e.message}")
-
-        # --- Legacy migration status ---
-        print("\nChecking legacy migration status…")
+        # ── Step 3: Platform upgrade / migration status ───────────────
+        print("\n3. Checking legacy migration status…")
         try:
             status = await rest.get_legacy_migration_status()
-            print(f"  Migration status: {status}")
-        except DerivAuthError:
-            print("  (Not available for this token)")
+            print(f"   Migration status: {status}")
+        except Exception as e:
+            print(f"   Migration status: {e}")
+
+        # ── Step 4: Request OTP WebSocket URL ─────────────────────────
+        if target_demo_account:
+            print(f"\n4. Generating pre-authorized OTP WebSocket URL for {target_demo_account}…")
+            try:
+                otp_url = await rest.get_otp_url(target_demo_account)
+                print("   OTP URL generated successfully!")
+                print(f"   URL: {otp_url[:65]}...")
+                print("   (This URL is ready to pass to DerivAPI(endpoint=otp_url) for trading)")
+            except DerivRequestError as e:
+                print(f"   Could not generate OTP URL: [{e.code}] {e.message}")
 
 
 if __name__ == "__main__":

@@ -10,19 +10,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Shared / common
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class LimitOrder:
     """Stop-loss / take-profit order attached to a contract."""
+
     stop_loss: float | None = None
     take_profit: float | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {}
         if self.stop_loss is not None:
             d["stop_loss"] = self.stop_loss
         if self.take_profit is not None:
@@ -33,6 +34,7 @@ class LimitOrder:
 # ---------------------------------------------------------------------------
 # active_symbols
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ActiveSymbolsRequest:
@@ -45,13 +47,14 @@ class ActiveSymbolsRequest:
         passthrough: Arbitrary data echoed back in the response.
         req_id: Optional integer to correlate request with response.
     """
-    active_symbols: str = "brief"           # "full" | "brief"
+
+    active_symbols: str = "brief"  # "full" | "brief"
     contract_type: list[str] | None = None
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"active_symbols": self.active_symbols}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"active_symbols": self.active_symbols}
         if self.contract_type is not None:
             d["contract_type"] = self.contract_type
         if self.passthrough is not None:
@@ -67,13 +70,13 @@ class ActiveSymbol:
     exchange_is_open: int
     is_trading_suspended: int
     market: str
-    symbol: str           # brief: "symbol",      full: "underlying_symbol"
-    display_name: str     # brief: "display_name", full: "underlying_symbol_name"
+    symbol: str  # brief: "symbol",      full: "underlying_symbol"
+    display_name: str  # brief: "display_name", full: "underlying_symbol_name"
     # Optional fields — present in brief
-    pip: float | None = None             # brief: "pip",         full: "pip_size"
+    pip: float | None = None  # brief: "pip",         full: "pip_size"
     subgroup: str | None = None
     submarket: str | None = None
-    symbol_type: str | None = None       # brief: "symbol_type", full: "underlying_symbol_type"
+    symbol_type: str | None = None  # brief: "symbol_type", full: "underlying_symbol_type"
     market_display_name: str | None = None
     subgroup_display_name: str | None = None
     submarket_display_name: str | None = None
@@ -81,7 +84,7 @@ class ActiveSymbol:
     close_only: int | None = None
     display_order: int | None = None
     # Remaining / unknown fields land here
-    extra: dict = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
 
     # Convenience aliases so existing code using the old names keeps working
     @property
@@ -97,18 +100,31 @@ class ActiveSymbol:
         return self.pip
 
     @classmethod
-    def from_dict(cls, d: dict) -> "ActiveSymbol":
+    def from_dict(cls, d: dict[str, Any]) -> ActiveSymbol:
         known = {
             # brief keys
-            "symbol", "display_name", "pip", "symbol_type",
-            "market_display_name", "subgroup_display_name", "submarket_display_name",
-            "allow_forward_starting", "close_only", "display_order",
+            "symbol",
+            "display_name",
+            "pip",
+            "symbol_type",
+            "market_display_name",
+            "subgroup_display_name",
+            "submarket_display_name",
+            "allow_forward_starting",
+            "close_only",
+            "display_order",
             # full-mode aliases
-            "underlying_symbol", "underlying_symbol_name", "pip_size",
-            "underlying_symbol_type", "trade_count",
+            "underlying_symbol",
+            "underlying_symbol_name",
+            "pip_size",
+            "underlying_symbol_type",
+            "trade_count",
             # shared
-            "exchange_is_open", "is_trading_suspended", "market",
-            "subgroup", "submarket",
+            "exchange_is_open",
+            "is_trading_suspended",
+            "market",
+            "subgroup",
+            "submarket",
         }
         return cls(
             exchange_is_open=d["exchange_is_open"],
@@ -135,6 +151,7 @@ class ActiveSymbol:
 # balance
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BalanceRequest:
     """
@@ -142,12 +159,13 @@ class BalanceRequest:
 
     Requires authentication (trade scope).
     """
+
     subscribe: bool = False
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"balance": 1}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"balance": 1}
         if self.subscribe:
             d["subscribe"] = 1
         if self.passthrough is not None:
@@ -166,7 +184,7 @@ class BalanceResponse:
     req_id: int | None = None
 
     @classmethod
-    def from_dict(cls, d: dict) -> "BalanceResponse":
+    def from_dict(cls, d: dict[str, Any]) -> BalanceResponse:
         b = d["balance"]
         sub = d.get("subscription", {})
         return cls(
@@ -182,6 +200,7 @@ class BalanceResponse:
 # buy
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BuyParameters:
     """
@@ -190,13 +209,14 @@ class BuyParameters:
     ``contract_type``, ``currency``, and ``symbol`` are required.
     Note: the API field name is ``symbol`` (not ``underlying_symbol``).
     """
+
     contract_type: str
     currency: str
     symbol: str
     amount: float | None = None
     barrier: str | None = None
     barrier2: str | None = None
-    basis: str | None = None          # "payout" | "stake"
+    basis: str | None = None  # "payout" | "stake"
     cancellation: str | None = None
     date_expiry: int | None = None
     duration: int | None = None
@@ -208,16 +228,25 @@ class BuyParameters:
     selected_tick: int | None = None
     app_markup_percentage: float | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "contract_type": self.contract_type,
             "currency": self.currency,
             "symbol": self.symbol,
         }
         for attr in (
-            "amount", "barrier", "barrier2", "basis", "cancellation",
-            "date_expiry", "duration", "duration_unit", "growth_rate",
-            "multiplier", "payout_per_point", "selected_tick",
+            "amount",
+            "barrier",
+            "barrier2",
+            "basis",
+            "cancellation",
+            "date_expiry",
+            "duration",
+            "duration_unit",
+            "growth_rate",
+            "multiplier",
+            "payout_per_point",
+            "selected_tick",
             "app_markup_percentage",
         ):
             v = getattr(self, attr)
@@ -236,15 +265,16 @@ class BuyRequest:
     ``buy`` is either a proposal ID string or ``"1"`` when passing
     ``parameters`` directly.
     """
-    buy: str                        # proposal_id or "1"
-    price: float                    # maximum acceptable price
+
+    buy: str  # proposal_id or "1"
+    price: float  # maximum acceptable price
     parameters: BuyParameters | None = None
-    subscribe: bool = False         # stream contract updates after buy
-    passthrough: dict | None = None
+    subscribe: bool = False  # stream contract updates after buy
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"buy": self.buy, "price": self.price}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"buy": self.buy, "price": self.price}
         if self.parameters is not None:
             d["parameters"] = self.parameters.to_dict()
         if self.subscribe:
@@ -271,7 +301,7 @@ class BuyResponse:
     req_id: int | None = None
 
     @classmethod
-    def from_dict(cls, d: dict) -> "BuyResponse":
+    def from_dict(cls, d: dict[str, Any]) -> BuyResponse:
         b = d["buy"]
         sub = d.get("subscription", {})
         return cls(
@@ -293,15 +323,17 @@ class BuyResponse:
 # cancel
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CancelRequest:
     """Cancel a contract by its contract_id. Requires trade scope."""
+
     contract_id: int
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"cancel": self.contract_id}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"cancel": self.contract_id}
         if self.passthrough is not None:
             d["passthrough"] = self.passthrough
         if self.req_id is not None:
@@ -319,7 +351,7 @@ class CancelResponse:
     req_id: int | None = None
 
     @classmethod
-    def from_dict(cls, d: dict) -> "CancelResponse":
+    def from_dict(cls, d: dict[str, Any]) -> CancelResponse:
         c = d.get("cancel", {})
         return cls(
             balance_after=c.get("balance_after"),
@@ -335,14 +367,16 @@ class CancelResponse:
 # contracts_list
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ContractsListRequest:
     """Get all contract categories available on the platform. No auth required."""
-    passthrough: dict | None = None
+
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"contracts_list": 1}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"contracts_list": 1}
         if self.passthrough is not None:
             d["passthrough"] = self.passthrough
         if self.req_id is not None:
@@ -357,7 +391,7 @@ class ContractCategory:
     display_name: str
 
     @classmethod
-    def from_dict(cls, d: dict) -> "ContractCategory":
+    def from_dict(cls, d: dict[str, Any]) -> ContractCategory:
         return cls(
             contract_category=d["contract_category"],
             contract_types=d["contract_types"],
@@ -369,6 +403,7 @@ class ContractCategory:
 # proposal_open_contract
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ProposalOpenContractRequest:
     """
@@ -377,13 +412,14 @@ class ProposalOpenContractRequest:
     If ``contract_id`` is omitted, streams updates for all open contracts.
     Requires trade scope.
     """
+
     contract_id: int | None = None
     subscribe: bool = False
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"proposal_open_contract": 1}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"proposal_open_contract": 1}
         if self.contract_id is not None:
             d["contract_id"] = self.contract_id
         if self.subscribe:
@@ -399,14 +435,16 @@ class ProposalOpenContractRequest:
 # logout
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class LogoutRequest:
     """Logout the current session. Requires trade scope."""
-    passthrough: dict | None = None
+
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"logout": 1}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"logout": 1}
         if self.passthrough is not None:
             d["passthrough"] = self.passthrough
         if self.req_id is not None:
@@ -418,6 +456,7 @@ class LogoutRequest:
 # contracts_for
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ContractsForRequest:
     """
@@ -425,12 +464,13 @@ class ContractsForRequest:
 
     ``symbol`` is the short code from ``active_symbols`` (e.g. ``"R_50"``).
     """
+
     symbol: str
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"contracts_for": self.symbol}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"contracts_for": self.symbol}
         if self.passthrough is not None:
             d["passthrough"] = self.passthrough
         if self.req_id is not None:
@@ -442,16 +482,18 @@ class ContractsForRequest:
 # contract_update
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ContractUpdateRequest:
     """Update stop-loss or take-profit on an open contract. Requires trade scope."""
+
     contract_id: int
     limit_order: LimitOrder
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "contract_update": 1,
             "contract_id": self.contract_id,
             "limit_order": self.limit_order.to_dict(),
@@ -467,16 +509,18 @@ class ContractUpdateRequest:
 # contract_update_history
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ContractUpdateHistoryRequest:
     """Get the update history of a contract. Requires trade scope."""
+
     contract_id: int
     limit: int = 500
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "contract_update_history": 1,
             "contract_id": self.contract_id,
             "limit": self.limit,
@@ -492,15 +536,17 @@ class ContractUpdateHistoryRequest:
 # forget / forget_all
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ForgetRequest:
     """Cancel a specific real-time stream by its subscription ID."""
+
     stream_id: str
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"forget": self.stream_id}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"forget": self.stream_id}
         if self.passthrough is not None:
             d["passthrough"] = self.passthrough
         if self.req_id is not None:
@@ -509,8 +555,13 @@ class ForgetRequest:
 
 
 STREAM_TYPES = (
-    "balance", "candles", "cashier_payments", "proposal",
-    "proposal_open_contract", "ticks", "transaction",
+    "balance",
+    "candles",
+    "cashier_payments",
+    "proposal",
+    "proposal_open_contract",
+    "ticks",
+    "transaction",
 )
 
 
@@ -522,12 +573,13 @@ class ForgetAllRequest:
     ``stream_types`` accepts a single string or a list, e.g.
     ``"ticks"`` or ``["ticks", "balance"]``.
     """
+
     stream_types: str | list[str]
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"forget_all": self.stream_types}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"forget_all": self.stream_types}
         if self.passthrough is not None:
             d["passthrough"] = self.passthrough
         if self.req_id is not None:
@@ -539,26 +591,27 @@ class ForgetAllRequest:
 # REST: account models
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class AccountInfo:
     account_id: str
     balance: float
     currency: str
     group: str
-    status: str       # "active" | "inactive"
+    status: str  # "active" | "inactive"
     account_type: str  # "demo" | "real"
     created_at: str | None = None
     email: str | None = None
     last_access_at: str | None = None
     name: str | None = None
     server_id: str | None = None
-    rights: dict = field(default_factory=dict)
+    rights: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, d: dict) -> "AccountInfo":
+    def from_dict(cls, d: dict[str, Any]) -> AccountInfo:
         return cls(
             account_id=d["account_id"],
-            balance=d["balance"],
+            balance=float(d["balance"]) if d.get("balance") is not None else 0.0,
             currency=d["currency"],
             group=d["group"],
             status=d["status"],
@@ -575,11 +628,12 @@ class AccountInfo:
 @dataclass
 class CreateAccountRequest:
     """Request body for creating a new Options trading account via REST."""
+
     currency: str = "USD"
     group: str = "row"
-    account_type: str = "demo"   # "demo" | "real"
+    account_type: str = "demo"  # "demo" | "real"
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "currency": self.currency,
             "group": self.group,
@@ -593,12 +647,14 @@ class LegacyAccount:
     currency: str
 
     @classmethod
-    def from_dict(cls, d: dict) -> "LegacyAccount":
+    def from_dict(cls, d: dict[str, Any]) -> LegacyAccount:
         return cls(account_id=d["account_id"], currency=d["currency"])
+
 
 # ---------------------------------------------------------------------------
 # proposal
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ProposalRequest:
@@ -608,13 +664,14 @@ class ProposalRequest:
     ``contract_type``, ``currency``, and ``underlying_symbol`` are required.
     Either ``duration`` or ``date_expiry`` must be provided.
     """
+
     contract_type: str
     currency: str
     underlying_symbol: str
     amount: float | None = None
     barrier: str | None = None
     barrier2: str | None = None
-    basis: str | None = None          # "payout" | "stake"
+    basis: str | None = None  # "payout" | "stake"
     cancellation: str | None = None
     date_expiry: int | None = None
     duration: int | None = None
@@ -625,20 +682,29 @@ class ProposalRequest:
     payout_per_point: float | None = None
     selected_tick: int | None = None
     subscribe: bool = False
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "proposal": 1,
             "contract_type": self.contract_type,
             "currency": self.currency,
             "underlying_symbol": self.underlying_symbol,
         }
         for attr in (
-            "amount", "barrier", "barrier2", "basis", "cancellation",
-            "date_expiry", "duration", "duration_unit", "growth_rate",
-            "multiplier", "payout_per_point", "selected_tick",
+            "amount",
+            "barrier",
+            "barrier2",
+            "basis",
+            "cancellation",
+            "date_expiry",
+            "duration",
+            "duration_unit",
+            "growth_rate",
+            "multiplier",
+            "payout_per_point",
+            "selected_tick",
         ):
             v = getattr(self, attr)
             if v is not None:
@@ -656,7 +722,7 @@ class ProposalRequest:
 
 @dataclass
 class ProposalResponse:
-    id: str                    # proposal ID — pass to buy()
+    id: str  # proposal ID — pass to buy()
     ask_price: float
     payout: float
     spot: float
@@ -669,15 +735,24 @@ class ProposalResponse:
     min_stake: float | None = None
     max_stake: float | None = None
     subscription_id: str | None = None
-    extra: dict = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, d: dict) -> "ProposalResponse":
+    def from_dict(cls, d: dict[str, Any]) -> ProposalResponse:
         p = d.get("proposal", d)  # tolerate both raw and wrapped
         known = {
-            "id", "ask_price", "payout", "spot", "spot_time", "date_start",
-            "longcode", "date_expiry", "commission", "multiplier",
-            "min_stake", "max_stake",
+            "id",
+            "ask_price",
+            "payout",
+            "spot",
+            "spot_time",
+            "date_start",
+            "longcode",
+            "date_expiry",
+            "commission",
+            "multiplier",
+            "min_stake",
+            "max_stake",
         }
         sub = d.get("subscription", {})
         return cls(
@@ -702,16 +777,18 @@ class ProposalResponse:
 # sell
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SellRequest:
     """Sell an open contract at market or at a minimum price."""
+
     contract_id: int
-    price: float = 0.0   # 0 = sell at market
-    passthrough: dict | None = None
+    price: float = 0.0  # 0 = sell at market
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"sell": self.contract_id, "price": self.price}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"sell": self.contract_id, "price": self.price}
         if self.passthrough is not None:
             d["passthrough"] = self.passthrough
         if self.req_id is not None:
@@ -729,7 +806,7 @@ class SellResponse:
     req_id: int | None = None
 
     @classmethod
-    def from_dict(cls, d: dict) -> "SellResponse":
+    def from_dict(cls, d: dict[str, Any]) -> SellResponse:
         s = d.get("sell", {})
         return cls(
             balance_after=s.get("balance_after"),
@@ -745,16 +822,18 @@ class SellResponse:
 # ticks / ticks_history
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class TicksRequest:
     """Subscribe to real-time tick stream for one or more symbols."""
+
     ticks: str | list[str]
     subscribe: bool = True
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"ticks": self.ticks}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"ticks": self.ticks}
         if self.subscribe:
             d["subscribe"] = 1
         if self.passthrough is not None:
@@ -775,7 +854,7 @@ class Tick:
     subscription_id: str | None = None
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Tick":
+    def from_dict(cls, d: dict[str, Any]) -> Tick:
         t = d.get("tick", d)
         sub = d.get("subscription", {})
         return cls(
@@ -796,19 +875,20 @@ class TicksHistoryRequest:
 
     ``end`` is required; use ``"latest"`` for the most recent data.
     """
+
     ticks_history: str
-    end: str = "latest"          # epoch string or "latest"
+    end: str = "latest"  # epoch string or "latest"
     start: int | None = None
     count: int | None = None
-    style: str = "ticks"         # "ticks" | "candles"
-    granularity: int | None = None   # candle width in seconds
+    style: str = "ticks"  # "ticks" | "candles"
+    granularity: int | None = None  # candle width in seconds
     adjust_start_time: bool = False
     subscribe: bool = False
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "ticks_history": self.ticks_history,
             "end": self.end,
             "style": self.style,
@@ -834,15 +914,17 @@ class TicksHistoryRequest:
 # portfolio
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class PortfolioRequest:
     """Get currently open contract positions. Requires trade scope."""
+
     contract_type: list[str] | None = None
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"portfolio": 1}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"portfolio": 1}
         if self.contract_type is not None:
             d["contract_type"] = self.contract_type
         if self.passthrough is not None:
@@ -856,21 +938,23 @@ class PortfolioRequest:
 # profit_table
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ProfitTableRequest:
     """Get a list of sold contracts and their profit/loss. Requires trade scope."""
+
     limit: int = 100
     offset: int = 0
-    date_from: str | None = None   # epoch string or "YYYY-MM-DD"
-    date_to: str | None = None     # epoch string or "YYYY-MM-DD"
+    date_from: int | str | None = None  # epoch integer/string or "YYYY-MM-DD"
+    date_to: int | str | None = None  # epoch integer/string or "YYYY-MM-DD"
     description: bool = False
-    sort: str = "DESC"           # "ASC" | "DESC"
+    sort: str = "DESC"  # "ASC" | "DESC"
     contract_type: list[str] | None = None
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "profit_table": 1,
             "limit": self.limit,
             "offset": self.offset,
@@ -895,20 +979,22 @@ class ProfitTableRequest:
 # statement
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class StatementRequest:
     """Get account transaction history. Requires trade scope."""
+
     limit: int = 100
     offset: int = 0
     date_from: int | None = None
     date_to: int | None = None
-    action_type: str | None = None   # "buy" | "sell" | "deposit" | "withdrawal"
+    action_type: str | None = None  # "buy" | "sell" | "deposit" | "withdrawal"
     description: bool = False
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "statement": 1,
             "limit": self.limit,
             "offset": self.offset,
@@ -932,15 +1018,17 @@ class StatementRequest:
 # transaction (subscription)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class TransactionRequest:
     """Subscribe to real-time transaction updates. Requires trade scope."""
-    passthrough: dict | None = None
+
+    subscribe: bool = True
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        # subscribe=1 is required by the schema — always include it
-        d: dict = {"transaction": 1, "subscribe": 1}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"transaction": 1, "subscribe": 1 if self.subscribe else 0}
         if self.passthrough is not None:
             d["passthrough"] = self.passthrough
         if self.req_id is not None:
@@ -952,13 +1040,14 @@ class TransactionRequest:
 # ping / time / trading_times
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class PingRequest:
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"ping": 1}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"ping": 1}
         if self.passthrough is not None:
             d["passthrough"] = self.passthrough
         if self.req_id is not None:
@@ -968,11 +1057,11 @@ class PingRequest:
 
 @dataclass
 class TimeRequest:
-    passthrough: dict | None = None
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"time": 1}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"time": 1}
         if self.passthrough is not None:
             d["passthrough"] = self.passthrough
         if self.req_id is not None:
@@ -982,12 +1071,12 @@ class TimeRequest:
 
 @dataclass
 class TradingTimesRequest:
-    trading_times: str   # date string "yyyy-mm-dd" or "today"
-    passthrough: dict | None = None
+    trading_times: str  # date string "yyyy-mm-dd" or "today"
+    passthrough: dict[str, Any] | None = None
     req_id: int | None = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"trading_times": self.trading_times}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"trading_times": self.trading_times}
         if self.passthrough is not None:
             d["passthrough"] = self.passthrough
         if self.req_id is not None:

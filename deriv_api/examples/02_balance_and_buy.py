@@ -1,7 +1,8 @@
 """
-Example 2 — Check balance and buy a contract.
+Example 2 — Check balance, query contracts, and buy an option contract.
 
-Requires a valid Deriv API token with 'trade' scope.
+Requires a valid Deriv API token (Personal Access Token - PAT).
+When using a PAT, DerivAPI automatically resolves the OTP WebSocket connection.
 
 Run:
     DERIV_TOKEN=your_token python -m deriv_api.examples.02_balance_and_buy
@@ -10,35 +11,34 @@ Run:
 import asyncio
 import os
 
-from jav_deriv_api import DerivAPI, BuyParameters, DerivAuthError, DerivRequestError
+from deriv_api import BuyParameters, DerivAPI, DerivAuthError, DerivRequestError
 
-APP_ID = 1089
 TOKEN = os.environ.get("DERIV_TOKEN", "")
 
 
 async def main() -> None:
     if not TOKEN:
-        print("Set the DERIV_TOKEN environment variable before running this example.")
+        print("Please set the DERIV_TOKEN environment variable before running this example.")
+        print("Example: export DERIV_TOKEN='pat_...'")
         return
 
-    async with DerivAPI(app_id=APP_ID, token=TOKEN) as api:
-
-        # --- Balance ---
-        print("Fetching account balance…")
+    print("Connecting to Deriv and initializing authenticated trading session...")
+    async with DerivAPI(token=TOKEN) as api:
+        # ── Step 1: Check account balance ──────────────────────────────
+        print("\n1. Fetching account balance…")
         balance = await api.get_balance()
-        print(f"  Login ID : {balance.loginid}")
-        print(f"  Balance  : {balance.balance:.2f} {balance.currency}\n")
+        print(f"  Account ID : {balance.loginid}")
+        print(f"  Balance    : {balance.balance:.2f} {balance.currency}")
 
-        # --- Contracts for a symbol ---
+        # ── Step 2: Query available contracts for R_50 ─────────────────
         symbol = "R_50"
-        print(f"Available contract types for {symbol}:")
+        print(f"\n2. Fetching available contract types for {symbol}…")
         cf = await api.get_contracts_for(symbol)
         available = cf.get("available", [])
-        # Collect unique categories
         seen: set[str] = set()
         for c in available:
             cat = c.get("contract_category_display", c.get("contract_category", ""))
-            if cat not in seen:
+            if cat and cat not in seen:
                 seen.add(cat)
                 types_in_cat = [
                     x.get("contract_type", "")
@@ -47,12 +47,12 @@ async def main() -> None:
                 ]
                 print(f"  {cat:<30} {', '.join(dict.fromkeys(types_in_cat))}")
 
-        # --- Buy a small demo contract (Rise/Fall, 1 USD, 5 ticks) ---
-        print("\nBuying a CALL contract on R_50 (5 ticks, 1 USD stake)…")
+        # ── Step 3: Buy a demo Rise (CALL) contract (1 USD, 5 ticks) ───
+        print(f"\n3. Buying a Rise (CALL) contract on {symbol} (5 ticks, 1.00 USD stake)…")
         params = BuyParameters(
             contract_type="CALL",
             currency="USD",
-            symbol="R_50",
+            symbol=symbol,
             amount=1.0,
             basis="stake",
             duration=5,
@@ -60,13 +60,14 @@ async def main() -> None:
         )
         try:
             receipt = await api.buy_with_parameters(params, price=1.0)
+            print("  ✓ Purchase confirmed!")
             print(f"  Contract ID  : {receipt.contract_id}")
-            print(f"  Buy price    : {receipt.buy_price:.4f} {balance.currency}")
-            print(f"  Payout       : {receipt.payout:.4f} {balance.currency}")
+            print(f"  Buy price    : {receipt.buy_price:.2f} {balance.currency}")
+            print(f"  Payout       : {receipt.payout:.2f} {balance.currency}")
             print(f"  Balance after: {receipt.balance_after:.2f} {balance.currency}")
             print(f"  Description  : {receipt.longcode}")
-        except DerivRequestError as e:
-            print(f"  Could not buy contract: [{e.code}] {e.message}")
+        except (DerivRequestError, DerivAuthError) as e:
+            print(f"  Could not buy contract: [{getattr(e, 'code', 'error')}] {e.message}")
 
 
 if __name__ == "__main__":

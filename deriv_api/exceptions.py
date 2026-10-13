@@ -2,11 +2,20 @@
 Exceptions for the Deriv API client library.
 """
 
+from __future__ import annotations
+
+from typing import Any
+
 
 class DerivAPIError(Exception):
     """Base exception for all Deriv API errors."""
 
-    def __init__(self, message: str, code: str | None = None, details: dict | None = None):
+    def __init__(
+        self,
+        message: str,
+        code: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.message = message
         self.code = code
@@ -28,7 +37,7 @@ class DerivRequestError(DerivAPIError):
     """Raised when the API returns an error response to a request."""
 
     @classmethod
-    def from_response(cls, response: dict) -> "DerivRequestError":
+    def from_response(cls, response: dict[str, Any]) -> DerivRequestError:
         """Build a DerivRequestError from a raw API error dict."""
         error = response.get("error", {})
         code = error.get("code", "UnknownError")

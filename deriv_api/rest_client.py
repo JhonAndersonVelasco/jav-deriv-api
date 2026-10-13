@@ -29,11 +29,13 @@ Usage
 from __future__ import annotations
 
 import logging
+import os
+from types import TracebackType
 from typing import Any
 
 import aiohttp
 
-from .exceptions import DerivAPIError, DerivAuthError, DerivConnectionError, DerivRequestError
+from .exceptions import DerivAuthError, DerivConnectionError, DerivRequestError
 from .models import AccountInfo, CreateAccountRequest, LegacyAccount
 
 logger = logging.getLogger(__name__)
@@ -50,8 +52,10 @@ class DerivRestClient:
     ----------
     app_id:
         Your Deriv application ID (sent as the ``Deriv-App-ID`` header).
+        If omitted, defaults to the ``DERIV_APP_ID`` environment variable.
     token:
-        Bearer token for authenticated endpoints.  Pass the full string
+        Bearer token for authenticated endpoints. If omitted, defaults to
+        the ``DERIV_TOKEN`` environment variable. Pass the full string
         including ``"Bearer "`` prefix, or just the raw token — the client
         normalises it.
     base_url:
@@ -62,13 +66,15 @@ class DerivRestClient:
 
     def __init__(
         self,
-        app_id: str | int,
+        app_id: str | int | None = None,
         token: str | None = None,
         base_url: str = _DEFAULT_BASE_URL,
         timeout: float = 30.0,
     ) -> None:
-        self.app_id = str(app_id)
-        self.token = self._normalise_token(token) if token else None
+        resolved_app_id = app_id if app_id is not None else os.environ.get("DERIV_APP_ID", "1089")
+        self.app_id = str(resolved_app_id)
+        resolved_token = token if token is not None else os.environ.get("DERIV_TOKEN")
+        self.token = self._normalise_token(resolved_token) if resolved_token else None
         self.base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._session: aiohttp.ClientSession | None = None
@@ -100,11 +106,16 @@ class DerivRestClient:
             await self._session.close()
         self._session = None
 
-    async def __aenter__(self) -> "DerivRestClient":
+    async def __aenter__(self) -> DerivRestClient:
         await self._get_session()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         await self.close()
 
     # ------------------------------------------------------------------
@@ -128,8 +139,8 @@ class DerivRestClient:
         url: str,
         *,
         auth: bool = False,
-        json_body: dict | None = None,
-        params: dict | None = None,
+        json_body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
     ) -> Any:
         session = await self._get_session()
         headers = self._build_headers(auth=auth)
@@ -164,7 +175,8 @@ class DerivRestClient:
 
                     if resp.status in (401, 403):
                         raise DerivAuthError(msg, code=code)
-                    raise DerivRequestError(msg, code=code, details=body if isinstance(body, dict) else {})
+                    details: dict[str, Any] = body if isinstance(body, dict) else {}
+                    raise DerivRequestError(msg, code=code, details=details)
 
                 return body
 
@@ -246,6 +258,30 @@ class DerivRestClient:
             return [AccountInfo.from_dict(a) for a in data]
         return AccountInfo.from_dict(data)
 
+    async def get_otp_url(self, account_id: str) -> str:
+        """
+        Request a one-time password (OTP) authenticated WebSocket URL.
+
+        Calls ``POST /trading/v1/options/accounts/{accountId}/otp`` with the
+        required Authorization and Deriv-App-ID headers.
+
+        Parameters
+        ----------
+        account_id:
+            Options trading account ID (e.g. from ``get_accounts()``).
+
+        Returns
+        -------
+        str
+            WebSocket URL with embedded OTP (e.g.
+            ``wss://api.derivws.com/trading/v1/options/ws/real?otp=...``).
+            Connect directly to this URL without any subsequent auth handshake.
+        """
+        url = f"{self.base_url}/trading/v1/options/accounts/{account_id}/otp"
+        body = await self._request("POST", url, auth=True)
+        data = body.get("data", {}) if isinstance(body, dict) else {}
+        return str(data.get("url", ""))
+
     # ------------------------------------------------------------------
     # Legacy accounts
     # ------------------------------------------------------------------
@@ -262,7 +298,7 @@ class DerivRestClient:
         """
         url = f"{self.base_url}/trading/v1/options/legacy/accounts"
         body = await self._request("GET", url, auth=True)
-        loginids: dict = body.get("loginids", {}) if isinstance(body, dict) else {}
+        loginids: dict[str, Any] = body.get("loginids", {}) if isinstance(body, dict) else {}
         return {
             loginid: [LegacyAccount.from_dict(a) for a in accounts]
             for loginid, accounts in loginids.items()

@@ -34,16 +34,19 @@ from pathlib import Path
 
 from dotenv import load_dotenv as _load_dotenv
 
-# Resolve candidate .env paths: project root first, then package dir as fallback.
+# Resolve candidate .env paths:
+# 1. Current working directory (application's .env)
+# 2. Project root
+# 3. Package directory (library defaults such as DERIV_APP_ID)
 _pkg_dir = Path(__file__).parent
 _candidates = [
-    _pkg_dir.parent / ".env",  # project root
-    _pkg_dir / ".env",         # deriv_api/.env
+    Path.cwd() / ".env",
+    _pkg_dir.parent / ".env",
+    _pkg_dir / ".env",
 ]
 for _env_path in _candidates:
     if _env_path.exists():
-        _load_dotenv(_env_path, override=False)  # override=False: env vars already set take priority
-        break
+        _load_dotenv(_env_path, override=False)  # override=False: app settings take priority
 
 from .api import DerivAPI
 from .client import DerivClient
@@ -68,10 +71,10 @@ from .models import (
     CancelRequest,
     CancelResponse,
     ContractCategory,
-    ContractUpdateHistoryRequest,
-    ContractUpdateRequest,
     ContractsForRequest,
     ContractsListRequest,
+    ContractUpdateHistoryRequest,
+    ContractUpdateRequest,
     CreateAccountRequest,
     ForgetAllRequest,
     ForgetRequest,
@@ -150,4 +153,4 @@ __all__ = [
     "Tick",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

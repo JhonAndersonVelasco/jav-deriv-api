@@ -7,15 +7,15 @@ Usage:
 
 from __future__ import annotations
 
-import os
-import re
 import sys
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _project_root() -> Path:
     """Return the directory that contains pyproject.toml / setup.cfg, or CWD."""
@@ -34,6 +34,7 @@ def _ask(prompt: str, default: str = "", secret: bool = False) -> str:
     try:
         if secret:
             import getpass
+
             value = getpass.getpass(full_prompt)
         else:
             value = input(full_prompt)
@@ -96,62 +97,90 @@ def _ensure_gitignore(root: Path) -> None:
 # Field definitions
 # ---------------------------------------------------------------------------
 
-FIELDS = [
-    {
-        "key": "DERIV_TOKEN",
-        "label": "Deriv Personal Access Token (PAT)",
-        "help": (
+
+def _validate_min_len(v: str) -> bool:
+    return len(v) > 10
+
+
+def _validate_non_empty(v: str) -> bool:
+    return bool(v.strip())
+
+
+def _validate_ws_endpoint(v: str) -> bool:
+    return v.startswith("wss://") or v.startswith("ws://")
+
+
+@dataclass
+class FieldDef:
+    key: str
+    label: str
+    help: str = ""
+    required: bool = False
+    secret: bool = False
+    default: str = ""
+    validate: Callable[[str], bool] | None = None
+    validate_msg: str = "Invalid value."
+
+
+FIELDS: list[FieldDef] = [
+    FieldDef(
+        key="DERIV_TOKEN",
+        label="Deriv Personal Access Token (PAT)",
+        help=(
             "Used for WebSocket API authentication (examples 02, 03).\n"
             "  Get it from: https://app.deriv.com/account/api-token\n"
             "  Scopes needed: read + trade"
         ),
-        "required": True,
-        "secret": True,
-        "validate": lambda v: len(v) > 10,
-        "validate_msg": "Token looks too short — please double-check.",
-    },
-    {
-        "key": "DERIV_OAUTH_TOKEN",
-        "label": "Deriv OAuth2 Bearer token (optional)",
-        "help": (
+        required=True,
+        secret=True,
+        validate=_validate_min_len,
+        validate_msg="Token looks too short — please double-check.",
+    ),
+    FieldDef(
+        key="DERIV_OAUTH_TOKEN",
+        label="Deriv OAuth2 Bearer token (optional)",
+        help=(
             "Used for REST API authentication (example 04).\n"
             "  Obtained via OAuth2 Authorization Code + PKCE flow:\n"
             "    Auth:  https://auth.deriv.com/oauth2/auth\n"
             "    Token: https://auth.deriv.com/oauth2/token\n"
             "  Leave blank to skip REST API examples."
         ),
-        "required": False,
-        "secret": True,
-        "default": "",
-        "validate": lambda v: len(v) > 10,
-        "validate_msg": "Token looks too short — please double-check.",
-    },
-    {
-        "key": "DERIV_APP_ID",
-        "label": "Application ID",
-        "help": "Your app_id from https://api.deriv.com/app-registration (leave blank to use the public demo ID 1089)",
-        "required": False,
-        "secret": False,
-        "default": "1089",
-        "validate": lambda v: v.isdigit(),
-        "validate_msg": "App ID must be a number.",
-    },
-    {
-        "key": "DERIV_ENDPOINT",
-        "label": "WebSocket endpoint",
-        "help": "Leave blank for the default production endpoint.",
-        "required": False,
-        "secret": False,
-        "default": "wss://ws.derivws.com/websockets/v3",
-        "validate": lambda v: v.startswith("wss://") or v.startswith("ws://"),
-        "validate_msg": "Endpoint must start with wss:// or ws://",
-    },
+        required=False,
+        secret=True,
+        default="",
+        validate=_validate_min_len,
+        validate_msg="Token looks too short — please double-check.",
+    ),
+    FieldDef(
+        key="DERIV_APP_ID",
+        label="Application ID",
+        help=(
+            "Your app_id from https://developers.deriv.com (leave blank to use public demo ID 1089)"
+        ),
+        required=False,
+        secret=False,
+        default="1089",
+        validate=_validate_non_empty,
+        validate_msg="App ID cannot be empty.",
+    ),
+    FieldDef(
+        key="DERIV_ENDPOINT",
+        label="WebSocket endpoint",
+        help="Leave blank for the default production endpoint.",
+        required=False,
+        secret=False,
+        default="wss://red.derivws.com/websockets/v3",
+        validate=_validate_ws_endpoint,
+        validate_msg="Endpoint must start with wss:// or ws://",
+    ),
 ]
 
 
 # ---------------------------------------------------------------------------
 # Main wizard
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     print("=" * 60)
@@ -173,12 +202,12 @@ def main() -> None:
     collected: dict[str, str] = {}
 
     for field in FIELDS:
-        key = field["key"]
-        label = field["label"]
-        secret = field.get("secret", False)
-        required = field.get("required", False)
-        default = existing.get(key, field.get("default", ""))
-        help_text = field.get("help", "")
+        key = field.key
+        label = field.label
+        secret = field.secret
+        required = field.required
+        default = existing.get(key, field.default)
+        help_text = field.help
 
         print(f"\n{label}")
         if help_text:
@@ -197,9 +226,9 @@ def main() -> None:
                     value = default
                     break
 
-            validator = field.get("validate")
+            validator = field.validate
             if validator and not validator(value):
-                print(f"  ✗ {field.get('validate_msg', 'Invalid value.')}")
+                print(f"  ✗ {field.validate_msg}")
                 continue
 
             break
