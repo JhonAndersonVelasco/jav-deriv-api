@@ -156,11 +156,12 @@ FIELDS: list[FieldDef] = [
         key="DERIV_APP_ID",
         label="Application ID",
         help=(
-            "Your app_id from https://developers.deriv.com (leave blank to use public demo ID 1089)"
+            "Your app_id from https://developers.deriv.com "
+            "(leave blank to use default Options API ID 34FoD4WDTegRoduFd3jkt)"
         ),
         required=False,
         secret=False,
-        default="1089",
+        default="34FoD4WDTegRoduFd3jkt",
         validate=_validate_non_empty,
         validate_msg="App ID cannot be empty.",
     ),

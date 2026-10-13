@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_BASE_URL = "https://api.derivws.com"
 _DEFAULT_TRADING_URL = "https://api.derivws.com"
+_DEFAULT_APP_ID = "34FoD4WDTegRoduFd3jkt"
 
 
 class DerivRestClient:
@@ -71,7 +72,9 @@ class DerivRestClient:
         base_url: str = _DEFAULT_BASE_URL,
         timeout: float = 30.0,
     ) -> None:
-        resolved_app_id = app_id if app_id is not None else os.environ.get("DERIV_APP_ID", "1089")
+        resolved_app_id = (
+            app_id if app_id is not None else os.environ.get("DERIV_APP_ID", _DEFAULT_APP_ID)
+        )
         self.app_id = str(resolved_app_id)
         resolved_token = token if token is not None else os.environ.get("DERIV_TOKEN")
         self.token = self._normalise_token(resolved_token) if resolved_token else None

@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 
 # Default Deriv WebSocket endpoint
 _DEFAULT_WS_URL = os.environ.get("DERIV_ENDPOINT", "wss://red.derivws.com/websockets/v3")
+_DEFAULT_APP_ID = "34FoD4WDTegRoduFd3jkt"
 
 # Sentinel used to close subscription async-generators cleanly
 _STREAM_CLOSE = object()
@@ -90,7 +91,7 @@ class DerivClient:
     ) -> None:
         if app_id is None:
             env_app_id = os.environ.get("DERIV_APP_ID")
-            app_id = env_app_id if env_app_id is not None else 1089
+            app_id = env_app_id if env_app_id is not None else _DEFAULT_APP_ID
         self.app_id = app_id
         if token is None:
             token = os.environ.get("DERIV_TOKEN")
