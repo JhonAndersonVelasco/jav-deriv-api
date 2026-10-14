@@ -228,14 +228,20 @@ class DerivClient:
 
         for task in (self._ping_task, self._recv_task):
             if task and not task.done():
-                task.cancel()
+                try:
+                    task.cancel()
+                except Exception:
+                    pass
                 try:
                     await task
-                except asyncio.CancelledError:
+                except (asyncio.CancelledError, Exception):
                     pass
 
         if self._ws and self._is_ws_open():
-            await self._ws.close()
+            try:
+                await self._ws.close()
+            except Exception:
+                pass
         self._ws = None
         self._authorized = False
 
@@ -243,15 +249,25 @@ class DerivClient:
         err = DerivConnectionError("Connection closed.")
         for fut in self._pending.values():
             if not fut.done():
-                fut.set_exception(err)
+                try:
+                    fut.set_exception(err)
+                except Exception:
+                    pass
         self._pending.clear()
 
         # Signal all subscription queues to close
         for queue in self._subscriptions.values():
-            await queue.put(_STREAM_CLOSE)
+            try:
+                await queue.put(_STREAM_CLOSE)
+            except Exception:
+                pass
         self._subscriptions.clear()
 
         logger.info("Disconnected from Deriv API.")
+
+    async def close(self) -> None:
+        """Close the WebSocket connection gracefully (alias for disconnect)."""
+        await self.disconnect()
 
     async def _reconnect_loop(self) -> None:
         """Attempt to reconnect with exponential backoff."""

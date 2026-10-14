@@ -120,6 +120,10 @@ class DerivAPI:
         """Close the WebSocket connection gracefully."""
         await self._client.disconnect()
 
+    async def close(self) -> None:
+        """Close the WebSocket connection gracefully (alias for disconnect)."""
+        await self.disconnect()
+
     async def authorize(self, token: str) -> dict[str, Any]:
         """
         Authorize the current session with an API token.
